@@ -8,6 +8,9 @@
 #include <arpa/inet.h>
 #include <netdb.h>
 #include <poll.h>
+#include <signal.h>
+#include <sys/wait.h>
+#include <errno.h>
 
 #define PORT "9034"
 #define BUFF_SIZE 1024
@@ -36,13 +39,6 @@ int setupServerSocket(void) {
             a_ele->ai_protocol
         );
         if (sockfd < 0) continue;
-        setsockopt(
-            sockfd,
-            SOL_SOCKET,
-            SO_REUSEADDR,
-            &yes,
-            sizeof(int)
-        );
         if (bind(sockfd, a_ele->ai_addr, a_ele->ai_addrlen) == -1) {
             close(sockfd);
             continue;
@@ -58,13 +54,116 @@ int setupServerSocket(void) {
     return sockfd;
 }
 
-int getFileName(void) {
+int setupListenerSocket(void) {
+    struct addrinfo hints, *a_info, *a_ele;
+    int listener;
+    int yes = 1;
+    int addr_return;
+    
+    memset(&hints, 0, sizeof hints);
+    hints.ai_family = AF_UNSPEC;
+    hints.ai_socktype = SOCK_STREAM;
+    hints.ai_flags = AI_PASSIVE;
+
+    addr_return = getaddrinfo(NULL, PORT, &hints, &a_info);
+    if (addr_return == -1) {
+        fprintf(stderr, "selectserver: %s\n", gai_strerror(addr_return));
+        exit(1);
+    }
+
+    for (a_ele = a_info; a_ele != NULL; a_ele = a_ele->ai_next) {
+        listener = socket(
+            a_ele->ai_family, 
+            a_ele->ai_socktype, 
+            a_ele->ai_protocol
+        );
+        if (listener < 0 ) {
+            continue;
+        }
+        setsockopt( //get rid of "address already in use" error msg
+            listener,
+            SOL_SOCKET,
+            SO_REUSEADDR,
+            &yes,
+            sizeof(int)
+        );
+        if (bind(listener, a_ele->ai_addr, a_ele->ai_addrlen) == -1) {
+            close(listener);
+            continue;
+        }
+        break;
+    }
+    freeaddrinfo(a_info);
+    if (a_ele == NULL) {
+        return -1;
+    }
+    if (listen(listener, 10) == -1) {
+        return -1;
+    }
+    return listener;
+}
+
+int fileExists(const char* file_name) {
+    if (access(file_name, F_OK) == 0) //file does exist
+        return 1;
+    else { //file doesn't exist
+        FILE* file = fopen(file_name, "w");
+        fclose(file);
+        FILE* names_file = fopen("filenames.txt", "a");
+        for (int i = 0; i != '\0'; ++i) {
+            fputc(file_name[i], names_file);
+        }
+        fclose(names_file);
+        return 0;
+    }
+}
+
+int notifyClientFileExists() {
 
 }
 
-struct C_String {
-    char* str;
-};
+void signalChildHandler(int signal) {
+    int saved_errno = errno; //waitpid might overwrite this
+    int child_pid;
+    while((child_pid = waitpid(-1, NULL, WNOHANG)) > 0)
+        printf("Child process terminated, PID: %d\n", child_pid);
+    errno = saved_errno;
+}
+
+void setupSigAction(struct sigaction* signal_action) {
+    signal_action->sa_handler = signalChildHandler;
+    sigemptyset(&(signal_action->sa_mask));
+    signal_action->sa_flags = SA_RESTART;
+    if (sigaction(SIGCHLD, &(*signal_action), NULL) == -1) {
+        perror("sigaction");
+        exit(1);
+    }
+}
+
+void* getAddress(struct sockaddr* socket_addr) {
+    if (socket_addr->sa_family == AF_INET) {
+        return &(((struct sockaddr_in*)socket_addr)->sin_addr);
+    }
+    return &(((struct sockaddr_in6*)socket_addr)->sin6_addr);
+}
+
+void addToPfds(struct pollfd* pfds[], int new_fd, int* fd_count, int* fd_size) {
+    if (*fd_count == *fd_size) {
+        *fd_size *= 2;
+        *pfds = realloc(*pfds, sizeof(**pfds) * (*fd_size));
+    }
+    (*pfds)[*fd_count].fd = new_fd;
+    (*pfds)[*fd_count].events = POLLIN;
+    ++(*fd_count);
+}
+
+void delFromPfds(struct pollfd pfds[], int i, int* fd_count) {
+    pfds[i] = pfds[((*fd_count)--) - 1];
+}
+
+//Setup TCP connection to get filename and communicate
+//if this exists or not. Then, setup UDP socket to transfer
+//file on
 
 int main(void) {
     int serv_socket = setupServerSocket();
@@ -72,12 +171,73 @@ int main(void) {
         fprintf(stderr, "error setting up server socket\n");
         exit(1);
     }
+    int listener_socket = setupListenerSocket();
+    if (listener_socket == -1) {
+        fprintf(stderr, "error getting listening socket\n");
+        exit(1);
+    }
+    int fd_count = 0;
+    int fd_size = 5;
+    struct pollfd* pfds = malloc(sizeof *pfds * fd_size); //poll file-descriptors
+    pfds[0].fd = listener_socket;
+    pfds[0].events = POLLIN;
+    ++fd_count;
 
-    struct sockaddr_in client_addr;
+    struct sockaddr_storage client_addr;
     socklen_t addr_size;
-    char buffer[BUFF_SIZE];
-    int bytes_received;
+    int new_fd;
+    char client_ip[INET_ADDRSTRLEN];
 
+    char file_buffer[BUFF_SIZE];
+    char tcp_buffer[256];
+    int bytes_received;
+    char* file_name;
+
+    struct sigaction signal_action;
+    setupSigAction(&signal_action);
+    for (;;) {
+        int poll_count = poll(pfds, fd_count, -1);
+        if (poll_count == -1) {
+            perror("poll");
+            exit(1);
+        }
+        for (int i = 0; i < fd_count; ++i) {
+            if (pfds[i].revents & POLLIN) {
+                if (pfds[i].fd == listener_socket) { //new connection
+                    addr_size = sizeof client_addr;
+                    new_fd = accept(
+                        listener_socket,
+                        (struct sockaddr*)&client_addr,
+                        &addr_size
+                    );
+                    if (new_fd == -1)
+                        perror("accept");
+                    else {
+                        addToPfds(&pfds, new_fd, &fd_count, &fd_size);
+                        printf(
+                            "server: new connection from %s on "
+                            "socket %d\n",
+                            inet_ntop(
+                                client_addr.ss_family,
+                                getAddress((struct sockaddr*)&client_addr),
+                                client_ip,
+                                INET6_ADDRSTRLEN
+                            ),
+                            new_fd
+                        );
+                    }
+                }
+                else { //client has sent data to socket representing client connection
+                    int num_bytes = recv(pfds[i].fd, tcp_buffer, sizeof tcp_buffer);
+                    
+                }
+            }
+        }
+    }
+
+
+
+    /*
     for (;;) {
         bytes_received = recvfrom(
             serv_socket,
@@ -87,6 +247,11 @@ int main(void) {
             (struct sockaddr*)&client_addr,
             &addr_size
         );
+        
+        if (fileExists(file_name)) {
+            notifyClientFileExists();
+            continue;
+        }
         if (bytes_received == 0) continue;
         if (buffer[0] == 'G') { //get filenames
             if (!fork()) {
@@ -107,5 +272,5 @@ int main(void) {
                 //send file to client
             }
         }      
-    }
+    }*/
 }
