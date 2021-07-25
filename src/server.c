@@ -53,7 +53,7 @@ int setupServerSocket(void) {
         fprintf(stderr, "server: failed to setup or bind socket\n");
         return -1;
     }
-    printf("Datagram socket successfully setup to listen on port %s", PORT);
+    printf("Datagram socket successfully setup to listen on port %s\n", PORT);
     return sockfd;
 }
 
@@ -152,7 +152,7 @@ void delFromPfds(struct pollfd pfds[], int i, int* fd_count) {
     pfds[i] = pfds[((*fd_count)--) - 1];
 }
 
-int getFilenames(char*** names, size_t names_size) {
+int readFilenames(char*** names, size_t names_size) {
     DIR* d;
     struct dirent* dir;
     size_t i = 0;
@@ -203,6 +203,44 @@ int serialiseFilenames(char*** names, char** names_serialised, int max_size, int
     return files_left;
 }
 
+int getFilenames(int sender_fd) {
+    size_t files_arr_size = 10;
+    char** file_names = malloc(files_arr_size * sizeof(*file_names));
+    //TODO: implement file-name caching
+    int num_files = readFilenames(&file_names, files_arr_size);
+    if (num_files == 0) {
+        exit(1);
+    }
+    else {
+        int num_left = num_files;
+        int serial_size = 256;
+        while (num_left > 0) {
+            char* files_serialised = malloc(serial_size);
+            strcpy(files_serialised, "\0");
+            num_left = serialiseFilenames(
+                &file_names, 
+                &files_serialised, 
+                serial_size, 
+                num_left
+            );
+            //send TCP packet to client with filenames
+            printf("\nserialised string:\n\n%s", files_serialised);
+            printf("strlen: %d\n", strlen(files_serialised));
+            int bytes_sent = send(
+                sender_fd,
+                files_serialised,
+                strlen(files_serialised),
+                0
+            );
+            if (bytes_sent == -1) {
+                perror("send");
+            }
+            realloc(files_serialised, 0);
+        }
+    }
+    close(sender_fd);
+    return 0;
+}
 
 //Setup TCP connection to get filename and communicate
 //if this exists or not. Then, setup UDP socket to transfer
@@ -240,10 +278,7 @@ int main(void) {
     setupSigAction(&signal_action);
     for (;;) {
         int poll_count = poll(pfds, fd_count, -1);
-        if (poll_count == -1) {
-            perror("poll");
-            exit(1);
-        }
+        if (poll_count == -1) continue;
         for (int i = 0; i < fd_count; ++i) {
             if (pfds[i].revents & POLLIN) {
                 if (pfds[i].fd == listener_socket) { //new connection
@@ -284,41 +319,8 @@ int main(void) {
                     else { //this is where client sends interface data
                         if (!fork()) {
                             if (tcp_buffer[0] == 'G') { //get filenames
-                                size_t files_arr_size = 10;
-                                char** file_names = malloc(files_arr_size * sizeof(*file_names));
-                                //TODO: implement file-name caching
-                                int num_files = getFilenames(&file_names, files_arr_size);
-                                if (num_files == 0) {
-                                    exit(1);
-                                }
-                                else {
-                                    int num_left = num_files;
-                                    int serial_size = 256;
-                                    while (num_left > 0) {
-                                        char* files_serialised = malloc(serial_size);
-                                        strcpy(files_serialised, "\0");
-                                        num_left = serialiseFilenames(
-                                            &file_names, 
-                                            &files_serialised, 
-                                            serial_size, 
-                                            num_left
-                                        );
-                                        printf("serialised string:\n\n%s", files_serialised);
-                                        //send TCP packet to client with filenames
-                                        int bytes_sent = send(
-                                            sender_fd,
-                                            files_serialised,
-                                            strlen(files_serialised),
-                                            0
-                                        );
-                                        if (bytes_sent == -1) {
-                                            perror("send");
-                                        }
-                                        free(files_serialised);
-                                    }
-                                    close(sender_fd);
-                                    exit(0);
-                                }
+                                getFilenames(sender_fd);
+                                exit(0);
                             }
                             
                             if (tcp_buffer[0] == 'U') { //client upload file
@@ -328,8 +330,8 @@ int main(void) {
                             if (tcp_buffer[0] == 'D') { //client download file
                                 //rest of buffer should have filename
                             }
-                            close(pfds[sender_fd].fd);
-                            close(listener_socket);
+                            //close(pfds[sender_fd].fd);
+                            //close(listener_socket);
                             exit(0);
                         }
                     }

@@ -9,8 +9,6 @@
 #include <sys/socket.h>
 #include <arpa/inet.h>
 
-
-
 #include "util.h"
 
 #define PORT "9034"
@@ -51,9 +49,50 @@ int connectToServer(const char* hostname) {
     );
     printf("Client: connecting to file server at %s\n", ip);
     freeaddrinfo(a_info);
+    return sock_fd;
 }
 
+int greetClientGetInput() {
+    int input;
+    printf(
+        "Welcome to the file transfer interface\n"
+        "Please choose an option:\n"
+        "(1) Get files on server\n"
+        "(2) Download file from server\n"
+        "(3) Upload file to server\n\n"
+    );
+    scanf("%d", &input);
+    if (input != 1 && input != 2 && input != 3) {
+        printf("Invalid input. Please try again\n");
+    }
+    return input;
+}
 
+int getFiles(int tcp_fd) {
+    if (send(tcp_fd, "G", 1, 0) == -1) {
+        perror("Send failed");
+        printf("Error: get file request to server failed");
+        return 0;
+    }
+    else {
+        int packet_size = 42;
+        char buffer[packet_size];
+        int num_bytes = recv(tcp_fd, buffer, packet_size - 1, 0);
+        if (num_bytes == -1) {
+            perror("Receive failed");
+            printf("Error: get file response to server failed");
+            return 0;
+        }
+        buffer[num_bytes] = '\0';
+        printf("BYTES RECEIVED: %d\n", num_bytes);
+        printf(
+            "Get files successful!\n"
+            "Files on server:\n\n"
+            "%s\n\n", buffer
+        );
+    }
+    return 1;
+}
 
 int main(int argc, char* argv[]) {
     if (argc != 2) {
@@ -65,5 +104,13 @@ int main(int argc, char* argv[]) {
         exit(1);
     }
     int tcp_fd = connectToServer(argv[1]);
-    
+    if (tcp_fd == 0) {
+        return 1;
+    }
+    for(;;) {
+        int input = greetClientGetInput();
+        if (input == 1) { //Get files
+            getFiles(tcp_fd);
+        }
+    }
 }
