@@ -188,6 +188,27 @@ int getFilenames(char*** names, size_t names_size) {
     return num_names;
 }
 
+int serialiseFilenames(char*** names, char** names_serialised, int max_size, int num_files) {
+    int serial_length = 0;
+    int name_length;
+    int files_left = num_files;
+    for (int i = 0; i < num_files; ++i) {
+        name_length = strlen((*names)[i]);
+        if ((serial_length + name_length) > max_size) {
+            break;
+        }
+        serial_length += name_length;
+        strcat((*names_serialised), (*names)[i]);
+        strcat((*names_serialised), "\n");
+        --files_left;
+        if (files_left == 0) {
+            strcat((*names_serialised), "END\n");
+        }
+    }
+    return files_left;
+}
+
+
 //Setup TCP connection to get filename and communicate
 //if this exists or not. Then, setup UDP socket to transfer
 //file on
@@ -270,9 +291,38 @@ int main(void) {
                             if (tcp_buffer[0] == 'G') { //get filenames
                                 size_t files_arr_size = 10;
                                 char** file_names = malloc(files_arr_size * sizeof(*file_names));
+                                //TODO: implement file-name caching
                                 int num_files = getFilenames(&file_names, files_arr_size);
                                 if (num_files == 0) {
                                     exit(1);
+                                }
+                                else {
+                                    int num_left = num_files;
+                                    int serial_size = 25;
+                                    while (num_left > 0) {
+                                        char* files_serialised = malloc(serial_size);
+                                        strcpy(files_serialised, "\0");
+                                        num_left = serialiseFilenames(
+                                            &file_names, 
+                                            &files_serialised, 
+                                            serial_size, 
+                                            num_left
+                                        );
+                                        printf("\nserialised string:\n\n%s", files_serialised);
+                                        //send TCP packet to client with filenames
+                                        int bytes_sent = send(
+                                            sender_fd,
+                                            files_serialised,
+                                            strlen(files_serialised),
+                                            0
+                                        );
+                                        if (bytes_sent == -1) {
+                                            perror("send");
+                                        }
+                                        free(files_serialised);
+                                    }
+                                    close(sender_fd);
+                                    exit(0);
                                 }
                             }
                             
@@ -292,43 +342,4 @@ int main(void) {
             }
         }
     }
-
-
-
-    /*
-    for (;;) {
-        bytes_received = recvfrom(
-            serv_socket,
-            buffer,
-            BUFF_SIZE,
-            0,
-            (struct sockaddr*)&client_addr,
-            &addr_size
-        );
-        
-        if (fileExists(file_name)) {
-            notifyClientFileExists();
-            continue;
-        }
-        if (bytes_received == 0) continue;
-        if (buffer[0] == 'G') { //get filenames
-            if (!fork()) {
-                close(serv_socket);
-            }
-        }
-        //if upload or download, save filename without forking
-        //unsafe to have multiple processes reading/writing to same file
-        else if (buffer[0] == 'U') { //upload file
-            if (!fork()) {
-                close(serv_socket);
-                //receive file from client
-            }
-        }
-        else if (buffer[0] == 'D') { //download file
-            if (!fork()) {
-                close(serv_socket);
-                //send file to client
-            }
-        }      
-    }*/
 }
