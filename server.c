@@ -11,6 +11,7 @@
 #include <signal.h>
 #include <sys/wait.h>
 #include <errno.h>
+#include <dirent.h>
 
 #define PORT "9034"
 #define BUFF_SIZE 1024
@@ -109,11 +110,6 @@ int fileExists(const char* file_name) {
     else { //file doesn't exist
         FILE* file = fopen(file_name, "w");
         fclose(file);
-        FILE* names_file = fopen("filenames.txt", "a");
-        for (int i = 0; i != '\0'; ++i) {
-            fputc(file_name[i], names_file);
-        }
-        fclose(names_file);
         return 0;
     }
 }
@@ -161,6 +157,37 @@ void delFromPfds(struct pollfd pfds[], int i, int* fd_count) {
     pfds[i] = pfds[((*fd_count)--) - 1];
 }
 
+int getFilenames(char*** names, size_t names_size) {
+    DIR* d;
+    struct dirent* dir;
+    size_t i = 0;
+    d = opendir("./storage");
+    int num_names = 0;
+    const char* current_dir = ".";
+    const char* prev_dir = "..";
+    if (d) {
+        while((dir = readdir(d)) != NULL) {
+            if (strcmp(dir->d_name, prev_dir) == 0 || strcmp(dir->d_name, current_dir) == 0) {
+                continue;
+            }
+            if (num_names == names_size) {
+                names_size *= 2;
+                char** tmp = (char**)realloc(*names, names_size * sizeof(char*));
+                if (tmp != NULL)
+                    *names = tmp;
+                else
+                    return 0;
+            }
+            (*names)[i] = (char*)malloc(sizeof(dir->d_name) + 1);
+            strcpy((*names)[i], dir->d_name);
+            ++num_names;
+            ++i;
+        }
+        closedir(d);
+    }
+    return num_names;
+}
+
 //Setup TCP connection to get filename and communicate
 //if this exists or not. Then, setup UDP socket to transfer
 //file on
@@ -178,7 +205,7 @@ int main(void) {
     }
     int fd_count = 0;
     int fd_size = 5;
-    struct pollfd* pfds = malloc(sizeof *pfds * fd_size); //poll file-descriptors
+    struct pollfd* pfds = malloc(sizeof(*pfds) * fd_size); //poll file-descriptors
     pfds[0].fd = listener_socket;
     pfds[0].events = POLLIN;
     ++fd_count;
@@ -228,8 +255,39 @@ int main(void) {
                     }
                 }
                 else { //client has sent data to socket representing client connection
-                    int num_bytes = recv(pfds[i].fd, tcp_buffer, sizeof tcp_buffer);
-                    
+                    int num_bytes = recv(pfds[i].fd, tcp_buffer, sizeof tcp_buffer, 0);
+                    int sender_fd = pfds[i].fd;
+                    if (num_bytes <= 0) {
+                        if (num_bytes == 0)
+                            printf("server: socket %d hung up\n", sender_fd);
+                        else
+                            perror("recv");
+                        close(pfds[i].fd);
+                        delFromPfds(pfds, i, &fd_count);
+                    }
+                    else { //this is where client sends interface data
+                        if (!fork()) {
+                            if (tcp_buffer[0] == 'G') { //get filenames
+                                size_t files_arr_size = 10;
+                                char** file_names = malloc(files_arr_size * sizeof(*file_names));
+                                int num_files = getFilenames(&file_names, files_arr_size);
+                                if (num_files == 0) {
+                                    exit(1);
+                                }
+                            }
+                            
+                            if (tcp_buffer[0] == 'U') { //client upload file
+                                //rest of buffer should have filename
+                            }
+
+                            if (tcp_buffer[0] == 'D') { //client download file
+                                //rest of buffer should have filename
+                            }
+                            close(pfds[sender_fd].fd);
+                            close(listener_socket);
+                            exit(0);
+                        }
+                    }
                 }
             }
         }
