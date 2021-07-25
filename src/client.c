@@ -60,7 +60,7 @@ int main(int argc, char* argv[]) {
         fprintf(
             stderr, 
             "Error: not called with correct number of arguments\n"
-            "Usage: fileTransferClient [hostname]"
+            "Usage: fileTransferClient [hostname]\n"
         );
         exit(1);
     }
