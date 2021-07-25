@@ -13,6 +13,8 @@
 #include <errno.h>
 #include <dirent.h>
 
+#include "util.h"
+
 #define PORT "9034"
 #define BUFF_SIZE 1024
 
@@ -134,13 +136,6 @@ void setupSigAction(struct sigaction* signal_action) {
         perror("sigaction");
         exit(1);
     }
-}
-
-void* getAddress(struct sockaddr* socket_addr) {
-    if (socket_addr->sa_family == AF_INET) {
-        return &(((struct sockaddr_in*)socket_addr)->sin_addr);
-    }
-    return &(((struct sockaddr_in6*)socket_addr)->sin6_addr);
 }
 
 void addToPfds(struct pollfd* pfds[], int new_fd, int* fd_count, int* fd_size) {

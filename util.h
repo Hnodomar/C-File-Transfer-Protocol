@@ -1,0 +1,1 @@
+extern void* getAddress(struct sockaddr* socket_addr);
