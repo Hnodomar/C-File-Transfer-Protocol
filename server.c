@@ -298,7 +298,7 @@ int main(void) {
                                 }
                                 else {
                                     int num_left = num_files;
-                                    int serial_size = 25;
+                                    int serial_size = 256;
                                     while (num_left > 0) {
                                         char* files_serialised = malloc(serial_size);
                                         strcpy(files_serialised, "\0");
@@ -308,7 +308,7 @@ int main(void) {
                                             serial_size, 
                                             num_left
                                         );
-                                        printf("\nserialised string:\n\n%s", files_serialised);
+                                        printf("serialised string:\n\n%s", files_serialised);
                                         //send TCP packet to client with filenames
                                         int bytes_sent = send(
                                             sender_fd,
