@@ -98,7 +98,7 @@ void setupSigAction(struct sigaction* signal_action) {
     }
 }
 
-void addToPfds(struct pollfd* pfds[], int new_fd, int* fd_count, int* fd_size) {
+void addToPfds(struct pollfd* pfds[], uint8_t new_fd, uint8_t* fd_count, uint8_t* fd_size) {
     if (*fd_count == *fd_size) {
         *fd_size *= 2;
         *pfds = realloc(*pfds, sizeof(**pfds) * (*fd_size));
@@ -108,7 +108,7 @@ void addToPfds(struct pollfd* pfds[], int new_fd, int* fd_count, int* fd_size) {
     ++(*fd_count);
 }
 
-void delFromPfds(struct pollfd pfds[], int i, int* fd_count) {
+void delFromPfds(struct pollfd pfds[], uint8_t i, uint8_t* fd_count) {
     pfds[i] = pfds[((*fd_count)--) - 1];
 }
 
@@ -213,58 +213,77 @@ struct RequestPacket {
     char filename[253];
 };
 
-int main(void) {
-    int listener_socket = setupListenerSocket();
-    if (listener_socket == -1) {
-        fprintf(stderr, "error getting listening socket\n");
-        exit(1);
+void handleClientRequest(uint8_t client_fd, void** buffer) {
+    struct RequestPacket* client_request = (struct RequestPacket*)(*buffer);
+    printf("length: %d\n", client_request->length);
+    printf("tag: %c\n", client_request->tag);
+    printf("filename: %s\n", client_request->filename);
+    switch(client_request->tag) {
+        case 'G':
+            getFilenames(client_fd);
+            break;
+        case 'U':
+            if (!fileExists(client_fd, client_request->filename)) {
+                //allow upload
+            }
+            else //deny upload
+            break;
+        case 'D':
+            if (fileExists(client_fd, client_request->filename)) {
+                //allow download
+            }
+            else //deny download
+            break;
+        default:
+            printf("server: received invalid packet from client\n");
+            break;
     }
-    int fd_count = 0;
-    int fd_size = 5;
+    exit(0);
+}
+
+void handleNewConnection(uint8_t listener_socket, struct pollfd** pfds, uint8_t* fd_count, uint8_t* fd_size) {
+    struct sockaddr_storage client_addr;
+    char client_ip[INET_ADDRSTRLEN];
+    socklen_t addr_size = sizeof(client_addr);
+    uint8_t new_fd = accept(
+        listener_socket,
+        (struct sockaddr*)&client_addr,
+        &addr_size
+    );
+    if (new_fd == -1)
+        perror("accept");
+    else {
+        addToPfds(&(*pfds), new_fd, &(*fd_count), &(*fd_size));
+        printf(
+            "server: new connection from %s on "
+            "socket %d\n",
+            inet_ntop(
+                client_addr.ss_family,
+                getAddress((struct sockaddr*)&client_addr),
+                client_ip,
+                INET6_ADDRSTRLEN
+            ),
+            new_fd
+        );
+    }
+}
+
+void startMainLoop(uint8_t listener_socket) {
+    uint8_t fd_count = 0;
+    uint8_t fd_size = 5;
     struct pollfd* pfds = malloc(sizeof(*pfds) * fd_size); //poll file-descriptors
     pfds[0].fd = listener_socket;
     pfds[0].events = POLLIN;
     ++fd_count;
-
-    struct sockaddr_storage client_addr;
-    socklen_t addr_size;
-    int new_fd;
-    char client_ip[INET_ADDRSTRLEN];
-
-    char file_buffer[BUFF_SIZE];
-    int bytes_received;
-    char* file_name;
-
     struct sigaction signal_action;
     setupSigAction(&signal_action);
     for (;;) {
         uint8_t poll_count = poll(pfds, fd_count, -1);
         if (poll_count == -1) continue;
-        for (int i = 0; i < fd_count; ++i) {
+        for (uint8_t i = 0; i < fd_count; ++i) {
             if (pfds[i].revents & POLLIN) {
                 if (pfds[i].fd == listener_socket) { //new connection
-                    addr_size = sizeof(client_addr);
-                    new_fd = accept(
-                        listener_socket,
-                        (struct sockaddr*)&client_addr,
-                        &addr_size
-                    );
-                    if (new_fd == -1)
-                        perror("accept");
-                    else {
-                        addToPfds(&pfds, new_fd, &fd_count, &fd_size);
-                        printf(
-                            "server: new connection from %s on "
-                            "socket %d\n",
-                            inet_ntop(
-                                client_addr.ss_family,
-                                getAddress((struct sockaddr*)&client_addr),
-                                client_ip,
-                                INET6_ADDRSTRLEN
-                            ),
-                            new_fd
-                        );
-                    }
+                    handleNewConnection(listener_socket, &pfds, &fd_count, &fd_size);
                 }
                 else { //client has sent data to socket representing client connection
                     void* buffer = malloc(256);
@@ -280,35 +299,24 @@ int main(void) {
                     }
                     else { //this is where client sends interface data
                         if (!fork()) {
-                            struct RequestPacket* client_request = (struct RequestPacket*)buffer;
-                            printf("length: %d\n", client_request->length);
-                            printf("tag: %c\n", client_request->tag);
-                            printf("filename: %s\n", client_request->filename);
-                            switch(client_request->tag) {
-                                case 'G':
-                                    getFilenames(client_fd);
-                                    break;
-                                case 'U':
-                                    if (!fileExists(client_fd, client_request->filename)) {
-                                        //allow upload
-                                    }
-                                    else //deny upload
-                                    break;
-                                case 'D':
-                                    if (fileExists(client_fd, client_request->filename)) {
-                                        //allow download
-                                    }
-                                    else //deny download
-                                    break;
-                                default:
-                                    printf("server: received invalid packet from client\n");
-                                    break;
-                            }
-                            exit(0);
+                            handleClientRequest(client_fd, &buffer);
                         }
                     }
                 }
             }
         }
     }
+}
+
+void initialiseServer() {
+    uint8_t listener_socket = setupListenerSocket();
+    if (listener_socket == -1) {
+        fprintf(stderr, "error getting listening socket\n");
+        exit(1);
+    }
+    startMainLoop(listener_socket);
+}
+
+int main(void) {
+    initialiseServer();
 }

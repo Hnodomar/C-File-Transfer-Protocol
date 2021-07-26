@@ -113,7 +113,8 @@ int sendRequest(uint8_t tcp_fd, char* tag, char* filename) {
     void* packet = malloc(packet_length);
     memcpy(packet, &packet_length, 1);
     memcpy(packet + 1, (const void*)tag, 1);
-    memcpy(packet + 2, filename, file_len);
+    if (strcmp("", filename) != 0)
+        memcpy(packet + 2, filename, file_len);
     if (sendAll(tcp_fd, packet, &packet_length) == -1) {
         printf("Error: client was only able to send out %d bytes of the request\n", packet_length);
         return 0;
