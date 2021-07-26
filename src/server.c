@@ -18,45 +18,6 @@
 #define PORT "9034"
 #define BUFF_SIZE 1024
 
-int setupServerSocket(void) {
-    struct addrinfo hints, *a_info, *a_ele;
-    int addr_return;
-    int sockfd;
-    int yes = 1;
-    
-    memset(&hints, 0, sizeof hints);
-    hints.ai_family = AF_UNSPEC;
-    hints.ai_socktype = SOCK_DGRAM;
-    hints.ai_flags = AI_PASSIVE;
-
-    addr_return = getaddrinfo(NULL, PORT, &hints, &a_info);
-    if (addr_return == -1) {
-        fprintf(stderr, "getaddrinfo: %s\n", gai_strerror(addr_return));
-        return 1;
-    }
-
-    for (a_ele = a_info; a_ele != NULL; a_ele = a_ele->ai_next) {
-        sockfd = socket(
-            a_ele->ai_family,
-            a_ele->ai_socktype,
-            a_ele->ai_protocol
-        );
-        if (sockfd < 0) continue;
-        if (bind(sockfd, a_ele->ai_addr, a_ele->ai_addrlen) == -1) {
-            close(sockfd);
-            continue;
-        }
-        break;
-    }
-    freeaddrinfo(a_info);
-    if (a_ele == NULL) {
-        fprintf(stderr, "server: failed to setup or bind socket\n");
-        return -1;
-    }
-    printf("Datagram socket successfully setup to listen on port %s\n", PORT);
-    return sockfd;
-}
-
 int setupListenerSocket(void) {
     struct addrinfo hints, *a_info, *a_ele;
     int listener;
@@ -235,23 +196,25 @@ int getFilenames(int sender_fd) {
             if (bytes_sent == -1) {
                 perror("send");
             }
-            realloc(files_serialised, 0);
+            //realloc(files_serialised, 0);
+            free(files_serialised);
         }
     }
     close(sender_fd);
     return 0;
 }
 
-//Setup TCP connection to get filename and communicate
-//if this exists or not. Then, setup UDP socket to transfer
-//file on
+int getFilenameFromClient(char** filename, int length) {
+
+}
+
+struct RequestPacket {
+    uint8_t length;
+    char tag;
+    char filename[254];
+};
 
 int main(void) {
-    int serv_socket = setupServerSocket();
-    if (serv_socket == -1) {
-        fprintf(stderr, "error setting up server socket\n");
-        exit(1);
-    }
     int listener_socket = setupListenerSocket();
     if (listener_socket == -1) {
         fprintf(stderr, "error getting listening socket\n");
@@ -270,7 +233,6 @@ int main(void) {
     char client_ip[INET_ADDRSTRLEN];
 
     char file_buffer[BUFF_SIZE];
-    char tcp_buffer[256];
     int bytes_received;
     char* file_name;
 
@@ -306,7 +268,8 @@ int main(void) {
                     }
                 }
                 else { //client has sent data to socket representing client connection
-                    int num_bytes = recv(pfds[i].fd, tcp_buffer, sizeof tcp_buffer, 0);
+                    void* buffer = malloc(256);
+                    int num_bytes = recv(pfds[i].fd, buffer, 256, 0);
                     int sender_fd = pfds[i].fd;
                     if (num_bytes <= 0) {
                         if (num_bytes == 0)
@@ -317,21 +280,23 @@ int main(void) {
                         delFromPfds(pfds, i, &fd_count);
                     }
                     else { //this is where client sends interface data
+                        struct RequestPacket* client_request = (struct RequestPacket*)buffer;
+                        printf("length: %d\n", client_request->length);
+                        printf("tag: %c\n", client_request->tag);
+                        printf("filename: %s\n", client_request->filename);
                         if (!fork()) {
-                            if (tcp_buffer[0] == 'G') { //get filenames
-                                getFilenames(sender_fd);
-                                exit(0);
+                            switch(client_request->tag) {
+                                case 'G':
+                                    getFilenames(sender_fd);
+                                    break;
+                                case 'U':
+                                    break;
+                                case 'D':
+                                    break;
+                                default:
+                                    printf("server: received invalid packet from client\n");
+                                    break;
                             }
-                            
-                            if (tcp_buffer[0] == 'U') { //client upload file
-                                //rest of buffer should have filename
-                            }
-
-                            if (tcp_buffer[0] == 'D') { //client download file
-                                //rest of buffer should have filename
-                            }
-                            //close(pfds[sender_fd].fd);
-                            //close(listener_socket);
                             exit(0);
                         }
                     }
