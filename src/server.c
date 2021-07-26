@@ -290,8 +290,16 @@ int main(void) {
                                     getFilenames(sender_fd);
                                     break;
                                 case 'U':
+                                    if (!fileExists(client_request->filename)) {
+                                        //allow upload
+                                    }
+                                    else //deny upload
                                     break;
                                 case 'D':
+                                    if (fileExists(client_request->filename)) {
+                                        //allow download
+                                    }
+                                    else //deny download
                                     break;
                                 default:
                                     printf("server: received invalid packet from client\n");

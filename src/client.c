@@ -122,7 +122,7 @@ void sendFilename(uint8_t tcp_fd, char* tag, char* filename) {
     memcpy(packet, &packet_length, 1);
     memcpy(packet + 1, (const void*)tag, 1);
     memcpy(packet + 2, filename, file_len);
-    send(tcp_fd, packet, sizeof(packet), 0);
+    send(tcp_fd, packet, packet_length, 0);
 }
 
 int fileExistsOnServer(uint8_t tcp_fd) {
