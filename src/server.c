@@ -67,14 +67,13 @@ int setupListenerSocket(void) {
     return listener;
 }
 
-int fileExists(const char* file_name) {
-    if (access(file_name, F_OK) == 0) //file does exist
+int fileExists(uint8_t client_fd, const char* file_name) {
+    if (access(file_name, F_OK) == 0) { //file does exist
+        send(client_fd, "Y", 1, 0);
         return 1;
-    else { //file doesn't exist
-        FILE* file = fopen(file_name, "w");
-        fclose(file);
-        return 0;
     }
+    send(client_fd, "N", 1, 0); //file doesn't exist
+    return 0;
 }
 
 int notifyClientFileExists() {
@@ -211,7 +210,7 @@ int getFilenameFromClient(char** filename, int length) {
 struct RequestPacket {
     uint8_t length;
     char tag;
-    char filename[254];
+    char filename[253];
 };
 
 int main(void) {
@@ -239,12 +238,12 @@ int main(void) {
     struct sigaction signal_action;
     setupSigAction(&signal_action);
     for (;;) {
-        int poll_count = poll(pfds, fd_count, -1);
+        uint8_t poll_count = poll(pfds, fd_count, -1);
         if (poll_count == -1) continue;
         for (int i = 0; i < fd_count; ++i) {
             if (pfds[i].revents & POLLIN) {
                 if (pfds[i].fd == listener_socket) { //new connection
-                    addr_size = sizeof client_addr;
+                    addr_size = sizeof(client_addr);
                     new_fd = accept(
                         listener_socket,
                         (struct sockaddr*)&client_addr,
@@ -269,34 +268,34 @@ int main(void) {
                 }
                 else { //client has sent data to socket representing client connection
                     void* buffer = malloc(256);
-                    int num_bytes = recv(pfds[i].fd, buffer, 256, 0);
-                    int sender_fd = pfds[i].fd;
+                    uint8_t num_bytes = recv(pfds[i].fd, buffer, 255, 0);
+                    uint8_t client_fd = pfds[i].fd;
                     if (num_bytes <= 0) {
                         if (num_bytes == 0)
-                            printf("server: socket %d hung up\n", sender_fd);
+                            printf("server: socket %d hung up\n", client_fd);
                         else
                             perror("recv");
                         close(pfds[i].fd);
                         delFromPfds(pfds, i, &fd_count);
                     }
                     else { //this is where client sends interface data
-                        struct RequestPacket* client_request = (struct RequestPacket*)buffer;
-                        printf("length: %d\n", client_request->length);
-                        printf("tag: %c\n", client_request->tag);
-                        printf("filename: %s\n", client_request->filename);
                         if (!fork()) {
+                            struct RequestPacket* client_request = (struct RequestPacket*)buffer;
+                            printf("length: %d\n", client_request->length);
+                            printf("tag: %c\n", client_request->tag);
+                            printf("filename: %s\n", client_request->filename);
                             switch(client_request->tag) {
                                 case 'G':
-                                    getFilenames(sender_fd);
+                                    getFilenames(client_fd);
                                     break;
                                 case 'U':
-                                    if (!fileExists(client_request->filename)) {
+                                    if (!fileExists(client_fd, client_request->filename)) {
                                         //allow upload
                                     }
                                     else //deny upload
                                     break;
                                 case 'D':
-                                    if (fileExists(client_request->filename)) {
+                                    if (fileExists(client_fd, client_request->filename)) {
                                         //allow download
                                     }
                                     else //deny download

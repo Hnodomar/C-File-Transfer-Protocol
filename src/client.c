@@ -70,30 +70,22 @@ int greetClientGetInput() {
     return input;
 }
 
-void getFiles(int tcp_fd) {
-    if (send(tcp_fd, "G", 1, 0) == -1) {
-        perror("Send failed");
-        printf("Error: get file request to server failed");
+struct ServerResponse {
+    uint8_t length;
+    char response_text[254];
+};
+
+void getFiles(uint8_t tcp_fd) {
+    uint8_t packet_size = 255;
+    void* buffer = malloc(packet_size);
+    uint8_t num_bytes = recv(tcp_fd, buffer, packet_size, 0);
+    struct ServerResponse* resp = (struct ServerResponse*)buffer; 
+    if (num_bytes == -1) {
+        perror("Receive failed");
+        printf("Error: get file response to server failed");
         return;
     }
-    else {
-        int packet_size = 42;
-        char buffer[packet_size];
-        int num_bytes = recv(tcp_fd, buffer, packet_size - 1, 0);
-        if (num_bytes == -1) {
-            perror("Receive failed");
-            printf("Error: get file response to server failed");
-            return;
-        }
-        buffer[num_bytes] = '\0';
-        printf("BYTES RECEIVED: %d\n", num_bytes);
-        printf(
-            "Get files successful!\n"
-            "Files on server:\n\n"
-            "%s\n\n", buffer
-        );
-    }
-    return;
+    printf("STR: %s\n", resp->response_text);
 }
 
 char* getFilename(int tcp_fd) {
@@ -114,7 +106,7 @@ char* getFilename(int tcp_fd) {
     return filename;
 }
 
-void sendFilename(uint8_t tcp_fd, char* tag, char* filename) {
+int sendRequest(uint8_t tcp_fd, char* tag, char* filename) {
     printf("str: %s\n", filename);
     uint8_t file_len = strlen(filename);
     uint8_t packet_length = 2 + file_len;
@@ -122,16 +114,22 @@ void sendFilename(uint8_t tcp_fd, char* tag, char* filename) {
     memcpy(packet, &packet_length, 1);
     memcpy(packet + 1, (const void*)tag, 1);
     memcpy(packet + 2, filename, file_len);
-    send(tcp_fd, packet, packet_length, 0);
+    if (sendAll(tcp_fd, packet, &packet_length) == -1) {
+        printf("Error: client was only able to send out %d bytes of the request\n", packet_length);
+        return 0;
+    }
+    return 1;
 }
 
-int fileExistsOnServer(uint8_t tcp_fd) {
-    char buffer[256];
+uint8_t fileExistsOnServer(uint8_t tcp_fd) {
+    char buffer[1];
     uint8_t num_bytes = recv(tcp_fd, buffer, sizeof(buffer), 0);
     if (num_bytes == -1) {
         printf("Error: failed to receive response from server that file exists\n");
         return 0;
     }
+    if (buffer[0] == 'N') return 0;
+    else if (buffer[0] == 'Y') return 1;
 }
 
 int uploadFileToServer(uint8_t tcp_fd) {
@@ -145,22 +143,30 @@ int downloadFileFromServer(uint8_t tcp_fd) {
 void startMainLoop(uint8_t tcp_fd) {
     for(;;) {
         uint8_t input = greetClientGetInput();
-        if (input == 1) { //Get files
-            getFiles(tcp_fd);
+        if (input == 1) { 
+            if (!sendRequest(tcp_fd, "G", ""))
+                continue;
+            getFiles(tcp_fd);            
         }
         else if (input == 2) {
-            sendFilename(tcp_fd, "D", getFilename(tcp_fd));
-            if (fileExistsOnServer(tcp_fd))
+            if (!sendRequest(tcp_fd, "D", getFilename(tcp_fd)))
+                continue;
+            if (fileExistsOnServer(tcp_fd) == 1)
                 downloadFileFromServer(tcp_fd);
-            else continue;
+            else {
+                printf("Error: file with that name does not exist on server\n");
+                continue;
+            }
         }
         else if (input == 3) {
-            sendFilename(tcp_fd, "U", getFilename(tcp_fd));
-            if (!fileExistsOnServer(tcp_fd))
+            if (!sendRequest(tcp_fd, "U", getFilename(tcp_fd)))
                 continue;
+            if (fileExistsOnServer(tcp_fd)) {
+                printf("Error: file with that name already exists on server\n");
+                continue;
+            }
             else uploadFileToServer(tcp_fd);
         }
-        else continue;
     }
 }
 
@@ -174,9 +180,7 @@ int initialiseClient(int argc, char** argv[]) {
         exit(1);
     }
     uint8_t tcp_fd = connectToServer((*argv)[1]);
-    if (tcp_fd == 0) {
-        return 0;
-    }
+    if (tcp_fd == 0) return 0;
     startMainLoop(tcp_fd);
 }
 
