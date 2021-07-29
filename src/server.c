@@ -70,13 +70,10 @@ int setupListenerSocket(void) {
 void getStoragePath(char* file_name, char** strg_path) {
     strcpy(*strg_path, "./storage/");
     uint8_t len = strlen(file_name);
-    //printf("filename before: %s\n", *strg_path);
     strncat(*strg_path, file_name, len);
-    //printf("filename after: %s\n", *strg_path);
 }
 
 uint8_t fileExists(uint8_t client_fd, char* file_name) {
-    printf("FILE EXISTS NAME: %s\n", file_name);
     if (access(file_name, F_OK) == 0) { //file does exist
         printf("file exists\n");
         send(client_fd, "Y", 1, 0);

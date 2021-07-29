@@ -31,17 +31,26 @@ int sendAll(uint8_t fd, void* buffer, uint8_t* len) {
 
 int recvAll(uint8_t fd, struct FileProtocolPacket** req) {
     uint8_t bytes_recv;
-    void* buffer = malloc(256);
-    uint8_t len = recv(fd, buffer, 255, 0);
+    const uint8_t header_len = 2;
+    void* header_buffer = malloc(header_len);
+    memset(header_buffer, 0, header_len);
+    int len = recv(fd, header_buffer, 2, 0);
     if (len == 0 || len == -1) {
-        printf("server: socket %d hung up\n", fd);
+        printf("Connection (%d) failed on receiving, received: %d\n", fd, len);
         return 0;
     }
     printf("BYTES RECEIVED: %d\n", len);
-    uint8_t packet_length = *((uint8_t*)buffer);
+    uint8_t packet_length = *((uint8_t*)header_buffer);
+    if (!(len < packet_length)) {
+        *req = (struct FileProtocolPacket*)header_buffer;
+        return 1;
+    }
+    void* buffer = malloc(packet_length);
+    memset(buffer, 0, packet_length);
+    memcpy(buffer, header_buffer, len);
     while (len < packet_length) {
         printf("recvAll iteration: len %d, max %d\n", len, packet_length);
-        bytes_recv = recv(fd, buffer + len, 256 - len, 0);
+        bytes_recv = recv(fd, buffer + len, packet_length - len, 0);
         if (bytes_recv == -1) {
             printf("server: recvAll failed\n");
             return 0;
@@ -70,17 +79,23 @@ int uploadFile(uint8_t fd, char* filename) {
     char data[PKT_DATA_SIZE] = {0};
     printf("Inside upload file\n");
     while (fgets(data, PKT_DATA_SIZE, file_ptr) != NULL) {
-        printf("line from file: %s\n", data);
+        if (!strcmp(data, "\n")) {
+            //bzero(data, PKT_DATA_SIZE);
+            data[1] = '\0';
+            //data[1] = '\n'; 
+        }
+        printf("line (%ld) from file: %s\n", strlen(data), data);
+        uint8_t data_len = strlen(data) + 2;
         void* file_packet = malloc(strlen(data) + 2);
-        uint8_t pkt_len = strlen(data) + 2;
-        constructPacket(pkt_len, &tag, data, &file_packet);
-        if (sendAll(fd, file_packet, &pkt_len) == -1) {
+        constructPacket(data_len, &tag, data, &file_packet);
+        if (sendAll(fd, file_packet, &data_len) == -1) {
             printf("Upload File: failed to send out packet");
             return 0;
         }
         bzero(data, PKT_DATA_SIZE);
         free(file_packet);
     }
+    fclose(file_ptr);
     printf("data: %s\n", data);
     return 1;
 }
@@ -97,9 +112,8 @@ int downloadFile(uint8_t fd, char* filename) {
         uint8_t len = strlen(file_pkt->filename);
         printf("line from file: %s\n", file_pkt->filename);
         if (file_pkt->filename[len] == '\0') {
-            printf("File downloaded successfully\n");
-            return 1;
         }
         free(file_pkt);
     }
+    fclose(file_ptr);
 }   
