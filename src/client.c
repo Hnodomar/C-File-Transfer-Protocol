@@ -52,28 +52,6 @@ int connectToServer(const char* hostname) {
     return sock_fd;
 }
 
-int greetClientGetInput() {
-    int input;
-    printf(
-        "Welcome to the file transfer interface\n"
-        "Please choose an option:\n"
-        "(1) Get files on server\n"
-        "(2) Download file from server\n"
-        "(3) Upload file to server\n\n"
-    );
-    scanf("%d", &input);
-    system("clear");
-    if (input != 1 && input != 2 && input != 3) {
-        printf("Invalid input. Please try again\n");
-        return 4;
-    }
-    return input;
-}
-
-void printServerFiles(struct FileProtocolPacket** response) {
-
-}
-
 void getFiles(uint8_t tcp_fd) {
     uint8_t packet_size = 255;
     char* filename_str = malloc(packet_size);
