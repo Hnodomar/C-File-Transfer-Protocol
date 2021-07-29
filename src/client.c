@@ -64,7 +64,7 @@ void getFiles(uint8_t tcp_fd) {
             printf("Client: error in receiving file names from server\n");
             exit(1);
         }
-        char substr[3];
+        char substr[3] = {0};
         memcpy(substr, &(resp->filename[resp->length-6]), 3);
         if ((strlen(filename_str) + (resp->length - 2)) > packet_size) {
             filename_str_size *= 2;
@@ -130,14 +130,6 @@ int fileExistsOnServer(uint8_t tcp_fd) {
     else if (buffer[0] == 'Y') return 1;
 }
 
-int uploadFileToServer(uint8_t tcp_fd) {
-
-}
-
-int downloadFileFromServer(uint8_t tcp_fd) {
-
-}
-
 void failedRequest(char* req_name) {
     printf("Client: failed to successfully send %s request to server\n", req_name);
     exit(1);
@@ -168,33 +160,42 @@ void inputError() {
     exit(1);
 }
 
-void startMainLoop(uint8_t tcp_fd, char** argv) {
-    if (!strcmp(argv[2], "-g")) { //get server files list
-        if (!sendRequest(tcp_fd, "G", "")) 
-            failedRequest("get files");
-        getFiles(tcp_fd);            
+void handleGetFiles(uint8_t tcp_fd) {
+    if (!sendRequest(tcp_fd, "G", "")) 
+        failedRequest("get files");
+    getFiles(tcp_fd);            
+}
+
+void handleClientDownload(uint8_t tcp_fd, char* filename) {
+    if (!sendRequest(tcp_fd, "D", getFilename())) 
+        failedRequest("download file");
+    if (fileExistsOnServer(tcp_fd))
+        downloadFile(tcp_fd, filename);
+    else {
+        printf("Error: file with that name does not exist on server\n");
     }
-    else if (!strcmp(argv[2], "-d")) { //download file from server
-        if (!sendRequest(tcp_fd, "D", getFilename())) 
-            failedRequest("download file");
-        if (fileExistsOnServer(tcp_fd))
-            downloadFileFromServer(tcp_fd);
-        else {
-            printf("Error: file with that name does not exist on server\n");
-        }
+}
+
+void handleClientUpload(uint8_t tcp_fd, char* filename) {
+    if (!sendRequest(tcp_fd, "U", getFilename()))
+        failedRequest("upload file");
+    if (fileExistsOnServer(tcp_fd)) {
+        printf("Error: file with that name already exists on server\n");
     }
-    else if (!strcmp(argv[2], "-u")) { //upload file to server
-        if (!sendRequest(tcp_fd, "U", getFilename()))
-            failedRequest("upload file");
-        if (fileExistsOnServer(tcp_fd)) {
-            printf("Error: file with that name already exists on server\n");
-        }
-        else uploadFileToServer(tcp_fd);
-    }
-    else if (!strcmp(argv[2], "-h")) {
+    else uploadFile(tcp_fd, filename);
+}
+
+void interpretCommand(uint8_t tcp_fd, char** argv) {
+    if (!strcmp(argv[2], "-g"))
+        handleGetFiles(tcp_fd);
+    else if (!strcmp(argv[2], "-d"))
+        handleClientDownload(tcp_fd, argv[3]);
+    else if (!strcmp(argv[2], "-u"))
+        handleClientUpload(tcp_fd, argv[3]);
+    else if (!strcmp(argv[2], "-h"))
        printHelpInfo();
-    }
-    else inputError();
+    else 
+        inputError();
 }
 
 void initialiseClient(int argc, char** argv) {
@@ -205,7 +206,7 @@ void initialiseClient(int argc, char** argv) {
     }
     uint8_t tcp_fd = connectToServer(argv[1]);
     if (tcp_fd == 0) exit(1);
-    startMainLoop(tcp_fd, argv);
+    interpretCommand(tcp_fd, argv);
 }
 
 int main(int argc, char* argv[]) {

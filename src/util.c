@@ -63,6 +63,41 @@ void constructPacket(uint8_t len, char* tag, void* data, void** packet) {
     memcpy(((*packet) + 2), data, (len - 2));
 }
 
-void uploadFile(uint8_t fd) {
-
+int uploadFile(uint8_t fd, char* filename) {
+    FILE* file_ptr;
+    file_ptr = fopen(filename, "r");
+    if (file_ptr == NULL) {
+        printf("Error in reading specified file for upload\n");
+        return;
+    }
+    char tag = 'U';
+    char data[PKT_DATA_SIZE] = {0};
+    while (fgets(data, PKT_DATA_SIZE, file_ptr) != NULL) {
+        void* file_packet;
+        uint8_t pkt_len = strlen(data) + 2;
+        constructPacket(pkt_len, &tag, data, &file_packet);
+        if (sendAll(fd, file_packet, &pkt_len) == -1) {
+            printf("Upload File: failed to send out packet");
+            return 0;
+        }
+        bzero(data, PKT_DATA_SIZE);
+    }
 }
+
+int downloadFile(uint8_t fd, char* filename) {
+    FILE* file_ptr = fopen(filename, "w");
+    for (;;) {
+        struct FileProtocolPacket* file_pkt;
+        if (!recvAll(fd, &file_pkt)) {
+            printf("Error: receiving packets failed whilst downloading file\n");
+            return 0;
+        }
+        fprintf(file_ptr, "%s", file_pkt->filename);
+        uint8_t len = strlen(file_pkt->filename);
+        if (file_pkt->filename[len] == '\0') {
+            printf("File downloaded successfully\n");
+            return 1;
+        }
+        free(file_pkt);
+    }
+}   

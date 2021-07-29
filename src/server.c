@@ -80,10 +80,6 @@ uint8_t fileExists(uint8_t client_fd, const char* file_name) {
     return 0;
 }
 
-int notifyClientFileExists() {
-
-}
-
 void signalChildHandler(int signal) {
     int saved_errno = errno; //waitpid might overwrite this
     int child_pid;
@@ -219,9 +215,9 @@ void handleClientRequest(uint8_t client_fd, struct FileProtocolPacket* client_re
         }
         case 'D':
             if (fileExists(client_fd, client_request->filename)) {
-                //allow download
+                uploadFile(client_fd, client_request->filename);
             }
-            else //deny download
+            else
                 printf("Server: client attempted to download file with name that does not exist\n");
             break;
         default:
