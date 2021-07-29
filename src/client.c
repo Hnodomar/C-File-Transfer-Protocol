@@ -88,26 +88,9 @@ void getFiles(uint8_t tcp_fd) {
     free(filename_str);
 }
 
-char* getFilename() {
-    char* filename;
-    while(1) {
-        printf("Enter filename: \n");
-        char str[300];
-        scanf("%s", str);
-        if (strlen(str) > 254) {
-            printf("Error: filename too long. Try again\n");
-        }
-        else {
-            filename = malloc(strlen(str));
-            strcpy(filename, str);
-            break; 
-        }
-    }
-    return filename;
-}
-
 int sendRequest(uint8_t tcp_fd, char* tag, char* filename) {
-    uint8_t request_len = 2;
+    printf("FILENAME: %s\n", filename);
+    uint8_t request_len = 2 + strlen(filename);
     void* packet = malloc(request_len);
     constructPacket(request_len, tag, filename, &packet);
     if (sendAll(tcp_fd, packet, &request_len) == -1) {
@@ -167,7 +150,7 @@ void handleGetFiles(uint8_t tcp_fd) {
 }
 
 void handleClientDownload(uint8_t tcp_fd, char* filename) {
-    if (!sendRequest(tcp_fd, "D", getFilename())) 
+    if (!sendRequest(tcp_fd, "D", filename)) 
         failedRequest("download file");
     if (fileExistsOnServer(tcp_fd))
         downloadFile(tcp_fd, filename);
@@ -177,7 +160,7 @@ void handleClientDownload(uint8_t tcp_fd, char* filename) {
 }
 
 void handleClientUpload(uint8_t tcp_fd, char* filename) {
-    if (!sendRequest(tcp_fd, "U", getFilename()))
+    if (!sendRequest(tcp_fd, "U", filename))
         failedRequest("upload file");
     if (fileExistsOnServer(tcp_fd)) {
         printf("Error: file with that name already exists on server\n");

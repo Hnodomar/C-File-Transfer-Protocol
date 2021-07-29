@@ -67,9 +67,16 @@ int setupListenerSocket(void) {
     return listener;
 }
 
-uint8_t fileExists(uint8_t client_fd, const char* file_name) {
-    //const char* rel_path = strcat("./storage/", file_name);
-    printf("Inside file exists\n");
+void getStoragePath(char* file_name, char** strg_path) {
+    strcpy(*strg_path, "./storage/");
+    uint8_t len = strlen(file_name);
+    //printf("filename before: %s\n", *strg_path);
+    strncat(*strg_path, file_name, len);
+    //printf("filename after: %s\n", *strg_path);
+}
+
+uint8_t fileExists(uint8_t client_fd, char* file_name) {
+    printf("FILE EXISTS NAME: %s\n", file_name);
     if (access(file_name, F_OK) == 0) { //file does exist
         printf("file exists\n");
         send(client_fd, "Y", 1, 0);
@@ -200,22 +207,27 @@ void handleClientRequest(uint8_t client_fd, struct FileProtocolPacket* client_re
     printf("length: %d\n", client_request->length);
     printf("tag: %c\n", client_request->tag);
     printf("filename: %s\n", client_request->filename);
+    char* rel_path;
+    if (client_request->length > 2) {
+        rel_path = malloc(strlen(client_request->filename) + 11);
+        getStoragePath(client_request->filename, &rel_path);
+    }
     switch(client_request->tag) {
         case 'G':
             if (!getFilenames(client_fd))
                 printf("server: getFilenames failed to send out all packets\n");
             break;
         case 'U': {
-            if (!fileExists(client_fd, client_request->filename)) {
-                //allow upload
+            if (!fileExists(client_fd, rel_path)) {
+                downloadFile(client_fd, rel_path);
             }
             else //deny upload
                 printf("Server: client attempted to upload file with name that already exists\n");
             break;
         }
         case 'D':
-            if (fileExists(client_fd, client_request->filename)) {
-                uploadFile(client_fd, client_request->filename);
+            if (fileExists(client_fd, rel_path)) {
+                uploadFile(client_fd, rel_path);
             }
             else
                 printf("Server: client attempted to download file with name that does not exist\n");

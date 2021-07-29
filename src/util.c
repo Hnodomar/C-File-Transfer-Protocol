@@ -66,14 +66,12 @@ void constructPacket(uint8_t len, char* tag, void* data, void** packet) {
 int uploadFile(uint8_t fd, char* filename) {
     FILE* file_ptr;
     file_ptr = fopen(filename, "r");
-    if (file_ptr == NULL) {
-        printf("Error in reading specified file for upload\n");
-        return;
-    }
     char tag = 'U';
     char data[PKT_DATA_SIZE] = {0};
+    printf("Inside upload file\n");
     while (fgets(data, PKT_DATA_SIZE, file_ptr) != NULL) {
-        void* file_packet;
+        printf("line from file: %s\n", data);
+        void* file_packet = malloc(strlen(data) + 2);
         uint8_t pkt_len = strlen(data) + 2;
         constructPacket(pkt_len, &tag, data, &file_packet);
         if (sendAll(fd, file_packet, &pkt_len) == -1) {
@@ -81,7 +79,10 @@ int uploadFile(uint8_t fd, char* filename) {
             return 0;
         }
         bzero(data, PKT_DATA_SIZE);
+        free(file_packet);
     }
+    printf("data: %s\n", data);
+    return 1;
 }
 
 int downloadFile(uint8_t fd, char* filename) {
@@ -94,6 +95,7 @@ int downloadFile(uint8_t fd, char* filename) {
         }
         fprintf(file_ptr, "%s", file_pkt->filename);
         uint8_t len = strlen(file_pkt->filename);
+        printf("line from file: %s\n", file_pkt->filename);
         if (file_pkt->filename[len] == '\0') {
             printf("File downloaded successfully\n");
             return 1;
