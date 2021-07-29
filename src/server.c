@@ -67,12 +67,16 @@ int setupListenerSocket(void) {
     return listener;
 }
 
-int fileExists(uint8_t client_fd, const char* file_name) {
+uint8_t fileExists(uint8_t client_fd, const char* file_name) {
+    //const char* rel_path = strcat("./storage/", file_name);
+    printf("Inside file exists\n");
     if (access(file_name, F_OK) == 0) { //file does exist
+        printf("file exists\n");
         send(client_fd, "Y", 1, 0);
         return 1;
     }
     send(client_fd, "N", 1, 0); //file doesn't exist
+    printf("file doesnt exist\n");
     return 0;
 }
 
@@ -85,6 +89,7 @@ void signalChildHandler(int signal) {
     int child_pid;
     while((child_pid = waitpid(-1, NULL, WNOHANG)) > 0)
         printf("Child process terminated, PID: %d\n", child_pid);
+    
     errno = saved_errno;
 }
 
@@ -98,21 +103,7 @@ void setupSigAction(struct sigaction* signal_action) {
     }
 }
 
-void addToPfds(struct pollfd* pfds[], uint8_t new_fd, uint8_t* fd_count, uint8_t* fd_size) {
-    if (*fd_count == *fd_size) {
-        *fd_size *= 2;
-        *pfds = realloc(*pfds, sizeof(**pfds) * (*fd_size));
-    }
-    (*pfds)[*fd_count].fd = new_fd;
-    (*pfds)[*fd_count].events = POLLIN;
-    ++(*fd_count);
-}
-
-void delFromPfds(struct pollfd pfds[], uint8_t i, uint8_t* fd_count) {
-    pfds[i] = pfds[((*fd_count)--) - 1];
-}
-
-int readFilenames(char*** names, size_t names_size) {
+int readFilenames(char*** names, size_t names_size, uint16_t* files_str_len) {
     DIR* d;
     struct dirent* dir;
     size_t i = 0;
@@ -135,6 +126,7 @@ int readFilenames(char*** names, size_t names_size) {
             }
             (*names)[i] = (char*)malloc(sizeof(dir->d_name) + 1);
             strcpy((*names)[i], dir->d_name);
+            *files_str_len += strlen(dir->d_name);
             ++num_names;
             ++i;
         }
@@ -163,17 +155,23 @@ int serialiseFilenames(char*** names, char** names_serialised, int max_size, int
     return files_left;
 }
 
-int getFilenames(int sender_fd) {
+int getFilenames(uint8_t sender_fd) {
     size_t files_arr_size = 10;
     char** file_names = malloc(files_arr_size * sizeof(*file_names));
     //TODO: implement file-name caching
-    int num_files = readFilenames(&file_names, files_arr_size);
+    //TODO: get full length of list, include this in packet sent to client
+    uint16_t files_str_len;
+    uint8_t num_files = readFilenames(&file_names, files_arr_size, &files_str_len);
+    files_str_len += num_files;
+    files_str_len += 4;
+    printf("FILES STR LEN: %d\n", files_str_len);
     if (num_files == 0) {
+        printf("server: failed to read filenames, realloc failed");
         exit(1);
     }
     else {
-        int num_left = num_files;
-        int serial_size = 256;
+        uint8_t num_left = num_files;
+        uint8_t serial_size = 254;
         while (num_left > 0) {
             char* files_serialised = malloc(serial_size);
             strcpy(files_serialised, "\0");
@@ -185,63 +183,55 @@ int getFilenames(int sender_fd) {
             );
             //send TCP packet to client with filenames
             printf("\nserialised string:\n\n%s", files_serialised);
-            printf("strlen: %d\n", strlen(files_serialised));
-            int bytes_sent = send(
-                sender_fd,
-                files_serialised,
-                strlen(files_serialised),
-                0
-            );
-            if (bytes_sent == -1) {
-                perror("send");
+            printf("strlen: %ld\n", strlen(files_serialised));
+            uint8_t pkt_len = strlen(files_serialised) + 2;
+            void* pkt = malloc(pkt_len);
+            char tag = 'G';
+            constructPacket(pkt_len, &tag, (void*)files_serialised, &pkt);
+            if (sendAll(sender_fd, pkt, &pkt_len) == -1) {
+                printf("server: sendAll() of filenames getting failed\n");
+                return 0;
             }
-            //realloc(files_serialised, 0);
+            free(pkt);
             free(files_serialised);
         }
     }
     close(sender_fd);
-    return 0;
+    return 1;
 }
 
-int getFilenameFromClient(char** filename, int length) {
-
-}
-
-struct RequestPacket {
-    uint8_t length;
-    char tag;
-    char filename[253];
-};
-
-void handleClientRequest(uint8_t client_fd, void** buffer) {
-    struct RequestPacket* client_request = (struct RequestPacket*)(*buffer);
+void handleClientRequest(uint8_t client_fd, struct FileProtocolPacket* client_request) {
     printf("length: %d\n", client_request->length);
     printf("tag: %c\n", client_request->tag);
     printf("filename: %s\n", client_request->filename);
     switch(client_request->tag) {
         case 'G':
-            getFilenames(client_fd);
+            if (!getFilenames(client_fd))
+                printf("server: getFilenames failed to send out all packets\n");
             break;
-        case 'U':
+        case 'U': {
             if (!fileExists(client_fd, client_request->filename)) {
                 //allow upload
             }
             else //deny upload
+                printf("Server: client attempted to upload file with name that already exists\n");
             break;
+        }
         case 'D':
             if (fileExists(client_fd, client_request->filename)) {
                 //allow download
             }
             else //deny download
+                printf("Server: client attempted to download file with name that does not exist\n");
             break;
         default:
             printf("server: received invalid packet from client\n");
             break;
     }
-    exit(0);
+    free(client_request);
 }
 
-void handleNewConnection(uint8_t listener_socket, struct pollfd** pfds, uint8_t* fd_count, uint8_t* fd_size) {
+uint8_t handleNewConnection(uint8_t listener_socket) {
     struct sockaddr_storage client_addr;
     char client_ip[INET_ADDRSTRLEN];
     socklen_t addr_size = sizeof(client_addr);
@@ -251,11 +241,10 @@ void handleNewConnection(uint8_t listener_socket, struct pollfd** pfds, uint8_t*
         &addr_size
     );
     if (new_fd == -1)
-        perror("accept");
+        return 0;
     else {
-        addToPfds(&(*pfds), new_fd, &(*fd_count), &(*fd_size));
         printf(
-            "server: new connection from %s on "
+            "Server: new connection from %s on "
             "socket %d\n",
             inet_ntop(
                 client_addr.ss_family,
@@ -265,46 +254,32 @@ void handleNewConnection(uint8_t listener_socket, struct pollfd** pfds, uint8_t*
             ),
             new_fd
         );
+        return new_fd;
     }
 }
 
 void startMainLoop(uint8_t listener_socket) {
-    uint8_t fd_count = 0;
-    uint8_t fd_size = 5;
-    struct pollfd* pfds = malloc(sizeof(*pfds) * fd_size); //poll file-descriptors
-    pfds[0].fd = listener_socket;
-    pfds[0].events = POLLIN;
-    ++fd_count;
     struct sigaction signal_action;
     setupSigAction(&signal_action);
     for (;;) {
-        uint8_t poll_count = poll(pfds, fd_count, -1);
-        if (poll_count == -1) continue;
-        for (uint8_t i = 0; i < fd_count; ++i) {
-            if (pfds[i].revents & POLLIN) {
-                if (pfds[i].fd == listener_socket) { //new connection
-                    handleNewConnection(listener_socket, &pfds, &fd_count, &fd_size);
-                }
-                else { //client has sent data to socket representing client connection
-                    void* buffer = malloc(256);
-                    uint8_t num_bytes = recv(pfds[i].fd, buffer, 255, 0);
-                    uint8_t client_fd = pfds[i].fd;
-                    if (num_bytes <= 0) {
-                        if (num_bytes == 0)
-                            printf("server: socket %d hung up\n", client_fd);
-                        else
-                            perror("recv");
-                        close(pfds[i].fd);
-                        delFromPfds(pfds, i, &fd_count);
-                    }
-                    else { //this is where client sends interface data
-                        if (!fork()) {
-                            handleClientRequest(client_fd, &buffer);
-                        }
-                    }
-                }
-            }
+        uint8_t client_fd = handleNewConnection(listener_socket);
+        if (!client_fd) {
+            printf("Server: error with client connecting\n");
+            continue;
         }
+        if (!fork()) {
+            close(listener_socket);
+            struct FileProtocolPacket* client_request;
+            if (!recvAll(client_fd, &client_request)) {
+                printf("Server: error in receiving data from client\n");
+                exit(1);
+            }
+            else 
+                handleClientRequest(client_fd, &(*client_request));
+            close(client_fd);
+            exit(0);
+        }
+        close(client_fd);
     }
 }
 
