@@ -41,7 +41,7 @@ int serialiseAndSendFilenames(uint8_t client_fd) {
             }
             uint8_t name_len = strlen(filename);
             if ((current_len + name_len + 1) > serialised_len) {
-                if (!sendFilenames(client_fd, serialised_len, serialised_str))
+                if (!sendFilenamesToClient(client_fd, serialised_len, serialised_str))
                     return 0;
                 current_len = 0;
             }
@@ -50,7 +50,7 @@ int serialiseAndSendFilenames(uint8_t client_fd) {
             current_len += (name_len + 1);
         }
         if (current_len != 0)
-            if (!sendFilenames(client_fd, serialised_len, serialised_str))
+            if (!sendFilenamesToClient(client_fd, serialised_len, serialised_str))
                 return 0;
         free(serialised_str);
         closedir(dir);

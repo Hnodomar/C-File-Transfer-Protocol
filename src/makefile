@@ -8,8 +8,11 @@ _CDEPS=util.h
 SDEPS=$(patsubst %, $(IDIR)/%, $(_SDEPS))
 CDEPS=$(patsubst %, $(IDIR)/%, $(_CDEPS))
 
-OBJ=$(patsubst %,$(ODIR)/%)
+ifneq ($(_OUTLOC), ../tests/)
+	override _OUTLOC=./
+endif
 
+OBJ=$(patsubst %,$(ODIR)/%)
 ODIR=obj
 UTILOBJ=obj/util.o
 FNOBJ=obj/filenames.o
@@ -18,10 +21,10 @@ $(ODIR)/%.o: %.c $(SDEPS)
 	$(CC) -c -o $@ $< $(CFLAGS)
 
 server: $(ODIR)/server.o $(UTILOBJ) $(FNOBJ)
-	$(CC) -o $@ $^ $(CFLAGS)
+	$(CC) -o $(_OUTLOC)$@ $^ $(CFLAGS)
 
 client: $(ODIR)/client.o $(UTILOBJ)
-	$(CC) -o $@ $^ $(CFLAGS)
+	$(CC) -o $(_OUTLOC)$@ $^ $(CFLAGS)
 
 .PHONY: clean
 

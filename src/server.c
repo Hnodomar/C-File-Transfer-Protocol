@@ -16,7 +16,6 @@
 #include "util.h"
 #include "filenames.h"
 
-#define PORT "9034"
 #define BUFF_SIZE 1024
 
 int setupListenerSocket(void) {
@@ -24,18 +23,15 @@ int setupListenerSocket(void) {
     int listener;
     int yes = 1;
     int addr_return;
-    
     memset(&hints, 0, sizeof hints);
     hints.ai_family = AF_UNSPEC;
     hints.ai_socktype = SOCK_STREAM;
     hints.ai_flags = AI_PASSIVE;
-
     addr_return = getaddrinfo(NULL, PORT, &hints, &a_info);
     if (addr_return == -1) {
         fprintf(stderr, "selectserver: %s\n", gai_strerror(addr_return));
         exit(1);
     }
-
     for (a_ele = a_info; a_ele != NULL; a_ele = a_ele->ai_next) {
         listener = socket(
             a_ele->ai_family, 
@@ -124,7 +120,8 @@ void handleClientGetFilenames(uint8_t client_fd, struct FileProtocolPacket* clie
 
 void handleClientRequest(uint8_t client_fd, struct FileProtocolPacket* client_request) {
     char* rel_path;
-    if (client_request->length > 2) { //not a get request
+    int is_get_req = (client_request->length < 2);
+    if (!is_get_req) { //not a get request
         const uint8_t d_name_len = 11;
         rel_path = malloc(strlen(client_request->filename) + d_name_len);
         getStoragePath(client_request->filename, &rel_path);
@@ -143,6 +140,8 @@ void handleClientRequest(uint8_t client_fd, struct FileProtocolPacket* client_re
             printf("server: received invalid packet from client\n");
             break;
     }
+    if (!is_get_req)
+        free(rel_path);
     free(client_request);
     client_request = NULL;
 }

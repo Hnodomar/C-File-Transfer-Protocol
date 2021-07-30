@@ -11,8 +11,6 @@
 
 #include "util.h"
 
-#define PORT "9034"
-
 int connectToServer(const char* hostname) {
     struct addrinfo hints, *a_info, *a_ele;
     int addr_return, sock_fd, yes = 1;
@@ -53,6 +51,7 @@ int connectToServer(const char* hostname) {
 }
 
 void getFileNames(uint8_t tcp_fd) {
+    printf("\n[FILES]\n");
     for (;;) {
         struct FileProtocolPacket* resp;
         if (!recvAll(tcp_fd, &resp)) {
@@ -67,6 +66,7 @@ void getFileNames(uint8_t tcp_fd) {
         free(resp);
         resp = NULL;
     }
+    printf("\n");
 }
 
 int sendRequest(uint8_t tcp_fd, char* tag, char* filename) {

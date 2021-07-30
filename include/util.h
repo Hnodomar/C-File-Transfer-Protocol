@@ -1,5 +1,6 @@
 #define PKT_DATA_SIZE 254
 #define HEADER_LEN 2
+#define PORT "9034"
 
 struct FileProtocolPacket {
     uint8_t length;
