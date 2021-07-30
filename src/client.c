@@ -108,7 +108,6 @@ int fileExistsOnServer(uint8_t tcp_fd) {
         printf("Error: failed to receive response from server that file exists\n");
         return 0;
     }
-    printf("buffer contains: %s\n", buffer);
     if (buffer[0] == 'N') return 0;
     else if (buffer[0] == 'Y') return 1;
 }

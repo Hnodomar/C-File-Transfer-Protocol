@@ -18,9 +18,7 @@ int sendAll(uint8_t fd, void* buffer, uint8_t* len) {
     uint8_t bytes_left = *len;
     uint8_t bytes_sent;
     while (total < *len) {
-        printf("sendAll iteration: len %d, max %d\n", total, *len);
         bytes_sent = send(fd, buffer + total, bytes_left, 0);
-        //printf("BYTES SENT: %d\n", bytes_sent);
         if (bytes_sent == -1) break;
         total += bytes_sent;
         bytes_left -= bytes_sent;
@@ -31,25 +29,22 @@ int sendAll(uint8_t fd, void* buffer, uint8_t* len) {
 
 int recvAll(uint8_t fd, struct FileProtocolPacket** req) {
     uint8_t bytes_recv;
-    const uint8_t header_len = 2;
-    void* header_buffer = malloc(header_len);
-    memset(header_buffer, 0, header_len);
-    int len = recv(fd, header_buffer, 2, 0);
+    void* header_buffer = malloc(HEADER_LEN);
+    memset(header_buffer, 0, HEADER_LEN);
+    int len = recv(fd, header_buffer, HEADER_LEN, 0);
     if (len == 0 || len == -1) {
         printf("Connection (%d) failed on receiving, received: %d\n", fd, len);
         return 0;
     }
-    printf("BYTES RECEIVED: %d\n", len);
     uint8_t packet_length = *((uint8_t*)header_buffer);
     if (!(len < packet_length)) {
         *req = (struct FileProtocolPacket*)header_buffer;
         return 1;
     }
-    void* buffer = malloc(packet_length);
+    void* buffer = malloc(packet_length + 1);
     memset(buffer, 0, packet_length);
     memcpy(buffer, header_buffer, len);
     while (len < packet_length) {
-        printf("recvAll iteration: len %d, max %d\n", len, packet_length);
         bytes_recv = recv(fd, buffer + len, packet_length - len, 0);
         if (bytes_recv == -1) {
             printf("server: recvAll failed\n");
@@ -61,15 +56,29 @@ int recvAll(uint8_t fd, struct FileProtocolPacket** req) {
         }
         len += bytes_recv;
     }
+    *((char*)buffer + (packet_length)) = '\0';
     *req = (struct FileProtocolPacket*)buffer;
+    buffer = NULL;
     return 1;
 }            
 
 void constructPacket(uint8_t len, char* tag, void* data, void** packet) {
-    const void* pktlen = &len;
     memcpy((*packet), (void*)&len, 1);
     memcpy(((*packet) + 1), (void*)tag, 1);
-    memcpy(((*packet) + 2), data, (len - 2));
+    memcpy(((*packet) + HEADER_LEN), data, (len - HEADER_LEN));
+}
+
+int notifyFullFileSent(uint8_t fd) {
+    char tag = 'U';
+    const char* data = "END";
+    uint8_t data_len = strlen(data) + HEADER_LEN;
+    void* packet = malloc(data_len);
+    constructPacket(data_len, &tag, (void*)data, &packet);
+    if (sendAll(fd, packet, &data_len) == -1) {
+        printf("Upload File: failed to notify remote that file was sent successfully\n");
+        return 0;
+    }
+    return 1;
 }
 
 int uploadFile(uint8_t fd, char* filename) {
@@ -77,16 +86,10 @@ int uploadFile(uint8_t fd, char* filename) {
     file_ptr = fopen(filename, "r");
     char tag = 'U';
     char data[PKT_DATA_SIZE] = {0};
-    printf("Inside upload file\n");
     while (fgets(data, PKT_DATA_SIZE, file_ptr) != NULL) {
-        if (!strcmp(data, "\n")) {
-            //bzero(data, PKT_DATA_SIZE);
-            data[1] = '\0';
-            //data[1] = '\n'; 
-        }
-        printf("line (%ld) from file: %s\n", strlen(data), data);
-        uint8_t data_len = strlen(data) + 2;
-        void* file_packet = malloc(strlen(data) + 2);
+        uint8_t len = strlen(data);
+        uint8_t data_len = strlen(data) + HEADER_LEN;
+        void* file_packet = malloc(data_len);
         constructPacket(data_len, &tag, data, &file_packet);
         if (sendAll(fd, file_packet, &data_len) == -1) {
             printf("Upload File: failed to send out packet");
@@ -94,9 +97,12 @@ int uploadFile(uint8_t fd, char* filename) {
         }
         bzero(data, PKT_DATA_SIZE);
         free(file_packet);
+        file_packet = NULL;
     }
     fclose(file_ptr);
-    printf("data: %s\n", data);
+    printf("File %s successfully sent to socket %d\n", filename, fd);
+    if (!notifyFullFileSent(fd))
+        return 0;
     return 1;
 }
 
@@ -106,14 +112,18 @@ int downloadFile(uint8_t fd, char* filename) {
         struct FileProtocolPacket* file_pkt;
         if (!recvAll(fd, &file_pkt)) {
             printf("Error: receiving packets failed whilst downloading file\n");
+            fclose(file_ptr);
             return 0;
+        }
+        if (!strcmp(file_pkt->filename, "END")) {
+            printf("File %s successfully downloaded!\n", filename);
+            fclose(file_ptr);
+            return 1;
         }
         fprintf(file_ptr, "%s", file_pkt->filename);
         uint8_t len = strlen(file_pkt->filename);
-        printf("line from file: %s\n", file_pkt->filename);
-        if (file_pkt->filename[len] == '\0') {
-        }
         free(file_pkt);
+        file_pkt = NULL;
     }
     fclose(file_ptr);
 }   
