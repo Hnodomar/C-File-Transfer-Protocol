@@ -1,3 +1,2 @@
-int readFilenames(char*** names, size_t names_size, uint16_t* files_str_len);
-int serialiseFilenames(char*** names, char** names_serialised, int max_size, int num_files);
-int getFilenames(uint8_t sender_fd);
+int serialiseAndSendFilenames(uint8_t client_fd);
+int sendFilenamesToClient(uint8_t client_fd, const uint8_t serialised_len, char* serialised_str);

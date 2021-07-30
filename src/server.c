@@ -90,7 +90,6 @@ void signalChildHandler(int signal) {
     int child_pid;
     while((child_pid = waitpid(-1, NULL, WNOHANG)) > 0)
         printf("Child process terminated, PID: %d\n", child_pid);
-    
     errno = saved_errno;
 }
 
@@ -119,7 +118,7 @@ void handleClientUpload(uint8_t client_fd, char* rel_path, struct FileProtocolPa
 }
 
 void handleClientGetFilenames(uint8_t client_fd, struct FileProtocolPacket* client_request) {
-    if (!getFilenames(client_fd))
+    if (!serialiseAndSendFilenames(client_fd))
         printf("Server: getFilenames failed to send out all packets to socket %d\n", client_fd);
 }
 
@@ -148,11 +147,11 @@ void handleClientRequest(uint8_t client_fd, struct FileProtocolPacket* client_re
     client_request = NULL;
 }
 
-uint8_t handleNewConnection(uint8_t listener_socket) {
+int handleNewConnection(uint8_t listener_socket) {
     struct sockaddr_storage client_addr;
     char client_ip[INET_ADDRSTRLEN];
     socklen_t addr_size = sizeof(client_addr);
-    uint8_t new_fd = accept(
+    int new_fd = accept(
         listener_socket,
         (struct sockaddr*)&client_addr,
         &addr_size

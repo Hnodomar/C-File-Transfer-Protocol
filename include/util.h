@@ -13,4 +13,4 @@ extern int recvAll(uint8_t fd, struct FileProtocolPacket** req);
 extern void constructPacket(uint8_t len, char* tag, void* data, void** packet);
 extern int uploadFile(uint8_t fd, char* filename);
 extern int downloadFile(uint8_t fd, char* filename);
-extern int notifyFullFileSent(uint8_t fd);
+extern int notifyFullFileSent(uint8_t fd, char tag);

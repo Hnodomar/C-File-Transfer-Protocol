@@ -52,44 +52,24 @@ int connectToServer(const char* hostname) {
     return sock_fd;
 }
 
-void getFiles(uint8_t tcp_fd) {
-    uint8_t packet_size = 255;
-    char* filename_str = malloc(packet_size);
-    uint16_t filename_str_size = packet_size;
-    uint16_t filename_str_len = 0;
-    strcpy(filename_str, "\0");
+void getFileNames(uint8_t tcp_fd) {
     for (;;) {
         struct FileProtocolPacket* resp;
         if (!recvAll(tcp_fd, &resp)) {
             printf("Client: error in receiving file names from server\n");
             exit(1);
         }
-        char substr[3] = {0};
-        memcpy(substr, &(resp->filename[resp->length-6]), 3);
-        if ((strlen(filename_str) + (resp->length - 2)) > packet_size) {
-            filename_str_size *= 2;
-            char* tmp = realloc(filename_str, filename_str_size);
-            if (tmp != NULL)
-                filename_str = tmp;
-            else {
-                printf("realloc failure!\n");
-                return;
-            }
+        if (!strcmp(resp->filename, "END")) {
+            printf("Client: successfully retrieved file list from server\n");
+            break;
         }
-        strncat(filename_str, resp->filename, resp->length - 2);
-        filename_str_len += (resp->length - 2);
+        printf("%s", resp->filename);
         free(resp);
-        if (!strcmp(substr, "END")) break;
+        resp = NULL;
     }
-    printf(
-        "Files successfully retrieved from server!\n"
-        "%s\n", filename_str
-    );
-    free(filename_str);
 }
 
 int sendRequest(uint8_t tcp_fd, char* tag, char* filename) {
-    printf("FILENAME: %s\n", filename);
     uint8_t request_len = 2 + strlen(filename);
     void* packet = malloc(request_len);
     constructPacket(request_len, tag, filename, &packet);
@@ -145,7 +125,7 @@ void inputError() {
 void handleGetFiles(uint8_t tcp_fd) {
     if (!sendRequest(tcp_fd, "G", "")) 
         failedRequest("get files");
-    getFiles(tcp_fd);            
+    getFileNames(tcp_fd);            
 }
 
 void handleClientDownload(uint8_t tcp_fd, char* filename) {
@@ -193,6 +173,7 @@ void initialiseClient(int argc, char** argv) {
 
 int main(int argc, char* argv[]) {
     initialiseClient(argc, argv);
+    return 0;
 }
 
 //./client localhost -u file1.txt

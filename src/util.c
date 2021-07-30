@@ -68,14 +68,13 @@ void constructPacket(uint8_t len, char* tag, void* data, void** packet) {
     memcpy(((*packet) + HEADER_LEN), data, (len - HEADER_LEN));
 }
 
-int notifyFullFileSent(uint8_t fd) {
-    char tag = 'U';
+int notifyFullFileSent(uint8_t fd, char tag) {
     const char* data = "END";
     uint8_t data_len = strlen(data) + HEADER_LEN;
     void* packet = malloc(data_len);
     constructPacket(data_len, &tag, (void*)data, &packet);
     if (sendAll(fd, packet, &data_len) == -1) {
-        printf("Upload File: failed to notify remote that file was sent successfully\n");
+        printf("notifyFullFileSent: failed to notify remote that file was sent successfully\n");
         return 0;
     }
     return 1;
@@ -101,7 +100,7 @@ int uploadFile(uint8_t fd, char* filename) {
     }
     fclose(file_ptr);
     printf("File %s successfully sent to socket %d\n", filename, fd);
-    if (!notifyFullFileSent(fd))
+    if (!notifyFullFileSent(fd, 'U'))
         return 0;
     return 1;
 }
@@ -121,7 +120,6 @@ int downloadFile(uint8_t fd, char* filename) {
             return 1;
         }
         fprintf(file_ptr, "%s", file_pkt->filename);
-        uint8_t len = strlen(file_pkt->filename);
         free(file_pkt);
         file_pkt = NULL;
     }
