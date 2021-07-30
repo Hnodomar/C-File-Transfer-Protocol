@@ -14,6 +14,7 @@
 #include <dirent.h>
 
 #include "util.h"
+#include "filenames.h"
 
 #define PORT "9034"
 #define BUFF_SIZE 1024
@@ -103,137 +104,48 @@ void setupSigAction(struct sigaction* signal_action) {
     }
 }
 
-int readFilenames(char*** names, size_t names_size, uint16_t* files_str_len) {
-    DIR* d;
-    struct dirent* dir;
-    size_t i = 0;
-    d = opendir("./storage");
-    int num_names = 0;
-    const char* current_dir = ".";
-    const char* prev_dir = "..";
-    if (d) {
-        while((dir = readdir(d)) != NULL) {
-            if (strcmp(dir->d_name, prev_dir) == 0 || strcmp(dir->d_name, current_dir) == 0) {
-                continue;
-            }
-            if (num_names == names_size) {
-                names_size *= 2;
-                char** tmp = (char**)realloc(*names, names_size * sizeof(char*));
-                if (tmp != NULL)
-                    *names = tmp;
-                else
-                    return 0;
-            }
-            (*names)[i] = (char*)malloc(sizeof(dir->d_name) + 1);
-            strcpy((*names)[i], dir->d_name);
-            *files_str_len += strlen(dir->d_name);
-            ++num_names;
-            ++i;
-        }
-        closedir(d);
-    }
-    return num_names;
+void handleClientDownload(uint8_t client_fd, char* rel_path, struct FileProtocolPacket* client_request) {
+    if (fileExists(client_fd, rel_path))
+        uploadFile(client_fd, rel_path);
+    else
+        printf("Server: client attempted to download file with name that does not exist\n");
 }
 
-int serialiseFilenames(char*** names, char** names_serialised, int max_size, int num_files) {
-    int serial_length = 0;
-    int name_length;
-    int files_left = num_files;
-    for (int i = 0; i < num_files; ++i) {
-        name_length = strlen((*names)[i]);
-        if ((serial_length + name_length) > max_size) {
-            break;
-        }
-        serial_length += name_length;
-        strcat((*names_serialised), (*names)[i]);
-        strcat((*names_serialised), "\n");
-        --files_left;
-        if (files_left == 0) {
-            strcat((*names_serialised), "END\n");
-        }
-    }
-    return files_left;
+void handleClientUpload(uint8_t client_fd, char* rel_path, struct FileProtocolPacket* client_request) {
+    if (!fileExists(client_fd, rel_path))
+        downloadFile(client_fd, rel_path);
+    else //deny upload
+        printf("Server: client attempted to upload file with name that already exists\n");
 }
 
-int getFilenames(uint8_t sender_fd) {
-    size_t files_arr_size = 10;
-    char** file_names = malloc(files_arr_size * sizeof(*file_names));
-    //TODO: implement file-name caching
-    //TODO: get full length of list, include this in packet sent to client
-    uint16_t files_str_len;
-    uint8_t num_files = readFilenames(&file_names, files_arr_size, &files_str_len);
-    files_str_len += num_files;
-    files_str_len += 4;
-    printf("FILES STR LEN: %d\n", files_str_len);
-    if (num_files == 0) {
-        printf("server: failed to read filenames, realloc failed");
-        exit(1);
-    }
-    else {
-        uint8_t num_left = num_files;
-        uint8_t serial_size = 254;
-        while (num_left > 0) {
-            char* files_serialised = malloc(serial_size);
-            strcpy(files_serialised, "\0");
-            num_left = serialiseFilenames(
-                &file_names, 
-                &files_serialised, 
-                serial_size, 
-                num_left
-            );
-            //send TCP packet to client with filenames
-            printf("\nserialised string:\n\n%s", files_serialised);
-            printf("strlen: %ld\n", strlen(files_serialised));
-            uint8_t pkt_len = strlen(files_serialised) + 2;
-            void* pkt = malloc(pkt_len);
-            char tag = 'G';
-            constructPacket(pkt_len, &tag, (void*)files_serialised, &pkt);
-            if (sendAll(sender_fd, pkt, &pkt_len) == -1) {
-                printf("server: sendAll() of filenames getting failed\n");
-                return 0;
-            }
-            free(pkt);
-            free(files_serialised);
-        }
-    }
-    close(sender_fd);
-    return 1;
+void handleClientGetFilenames(uint8_t client_fd, struct FileProtocolPacket* client_request) {
+    if (!getFilenames(client_fd))
+        printf("Server: getFilenames failed to send out all packets to socket %d\n", client_fd);
 }
 
 void handleClientRequest(uint8_t client_fd, struct FileProtocolPacket* client_request) {
-    printf("length: %d\n", client_request->length);
-    printf("tag: %c\n", client_request->tag);
-    printf("filename: %s\n", client_request->filename);
     char* rel_path;
-    if (client_request->length > 2) {
-        rel_path = malloc(strlen(client_request->filename) + 11);
+    if (client_request->length > 2) { //not a get request
+        const uint8_t d_name_len = 11;
+        rel_path = malloc(strlen(client_request->filename) + d_name_len);
         getStoragePath(client_request->filename, &rel_path);
     }
     switch(client_request->tag) {
         case 'G':
-            if (!getFilenames(client_fd))
-                printf("server: getFilenames failed to send out all packets\n");
+            handleClientGetFilenames(client_fd, client_request);
             break;
-        case 'U': {
-            if (!fileExists(client_fd, rel_path)) {
-                downloadFile(client_fd, rel_path);
-            }
-            else //deny upload
-                printf("Server: client attempted to upload file with name that already exists\n");
+        case 'U':
+            handleClientUpload(client_fd, rel_path, client_request);
             break;
-        }
         case 'D':
-            if (fileExists(client_fd, rel_path)) {
-                uploadFile(client_fd, rel_path);
-            }
-            else
-                printf("Server: client attempted to download file with name that does not exist\n");
+            handleClientDownload(client_fd, rel_path, client_request);
             break;
         default:
             printf("server: received invalid packet from client\n");
             break;
     }
     free(client_request);
+    client_request = NULL;
 }
 
 uint8_t handleNewConnection(uint8_t listener_socket) {

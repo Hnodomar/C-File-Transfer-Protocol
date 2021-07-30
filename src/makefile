@@ -1,17 +1,23 @@
 CC=gcc
 CFLAGS=-I$(IDIR)
-_DEPS=util.h
-DEPS=$(patsubst %,$(IDIR)/%,$(_DEPS))
+
+IDIR=../include
+
+_SDEPS=util.h filenames.h
+_CDEPS=util.h
+SDEPS=$(patsubst %, $(IDIR)/%, $(_SDEPS))
+CDEPS=$(patsubst %, $(IDIR)/%, $(_CDEPS))
+
 OBJ=$(patsubst %,$(ODIR)/%)
 
 ODIR=obj
 UTILOBJ=obj/util.o
-IDIR=../include
+FNOBJ=obj/filenames.o
 
-$(ODIR)/%.o: %.c $(DEPS)
+$(ODIR)/%.o: %.c $(SDEPS)
 	$(CC) -c -o $@ $< $(CFLAGS)
 
-server: $(ODIR)/server.o $(UTILOBJ)
+server: $(ODIR)/server.o $(UTILOBJ) $(FNOBJ)
 	$(CC) -o $@ $^ $(CFLAGS)
 
 client: $(ODIR)/client.o $(UTILOBJ)
@@ -20,4 +26,4 @@ client: $(ODIR)/client.o $(UTILOBJ)
 .PHONY: clean
 
 clean:
-	rm $(ODIR)/*.o client server 
+	rm $(ODIR)/*.o ./*.txt client server 
