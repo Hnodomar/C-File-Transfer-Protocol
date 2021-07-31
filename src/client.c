@@ -8,6 +8,7 @@
 #include <netinet/in.h>
 #include <sys/socket.h>
 #include <arpa/inet.h>
+#include <libgen.h>
 
 #include "util.h"
 
@@ -70,7 +71,7 @@ void getFileNames(uint8_t tcp_fd) {
 }
 
 int sendRequest(uint8_t tcp_fd, char* tag, char* filename) {
-    uint8_t request_len = 2 + strlen(filename);
+    uint8_t request_len = HEADER_LEN + strlen(filename);
     void* packet = malloc(request_len);
     constructPacket(request_len, tag, filename, &packet);
     if (sendAll(tcp_fd, packet, &request_len) == -1) {
@@ -139,7 +140,11 @@ void handleClientDownload(uint8_t tcp_fd, char* filename) {
 }
 
 void handleClientUpload(uint8_t tcp_fd, char* filename) {
-    if (!sendRequest(tcp_fd, "U", filename))
+    if (access(filename, F_OK) != 0) {
+        printf("Error: file doesn't exist on client\n");
+        exit(1);
+    }
+    if (!sendRequest(tcp_fd, "U", basename(filename)))
         failedRequest("upload file");
     if (fileExistsOnServer(tcp_fd)) {
         printf("Error: file with that name already exists on server\n");
