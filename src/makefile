@@ -8,7 +8,7 @@ _CDEPS=util.h
 SDEPS=$(patsubst %, $(IDIR)/%, $(_SDEPS))
 CDEPS=$(patsubst %, $(IDIR)/%, $(_CDEPS))
 
-ifneq ($(_OUTLOC), ../tests/)
+ifneq ($(_OUTLOC), ../tests/integration/)
 	override _OUTLOC=./
 endif
 

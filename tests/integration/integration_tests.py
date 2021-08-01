@@ -18,16 +18,10 @@ class FileTransferTester:
         return self.tests_failed
 
     def __removeOutput(self, filename):
-        path = ""
-        if self.__test_flag == "-u":
-            path = "storage/"
-        elif self.__test_flag == "-d":
-            subprocess.Popen(["rm storage/{}".format(filename)], shell=True)
-        elif self.__test_flag == "-g":
-            subprocess.Popen(["rm storage/*"], shell=True)
-        path += filename
-        #subprocess.Popen(["rm {}".format(path)], shell=True)
-
+        (subprocess.Popen(["rm storage/*"], shell=True)).wait()
+        if self.__test_flag != "-u":
+            (subprocess.Popen(["rm {}".format(filename)], shell=True)).wait()
+        
     def __runDiff(self, filename):
         output_file = "storage/{}".format(filename) if self.__test_flag == "-u" else filename
         cmd = ["diff {}/{} {}".format(self.__baseline_dir, filename, output_file)]
@@ -36,10 +30,10 @@ class FileTransferTester:
         test_type = "Upload" if self.__test_flag == "-u" else "Download" if self.__test_flag == "-d" else "GetFiles"
         if difftask.returncode == 0:
             print("{} test success!\n".format(test_type))
+            self.__removeOutput(filename) #we want to keep the faulty output for debugging
         else:
             print("{} test failed!\n".format(test_type))
             self.tests_failed += 1
-        #self.__removeOutput(filename)
         
     def __prepareForGetFiles(self, filename):
         name_list = self.__baseline_dir + "/" + filename
@@ -78,7 +72,8 @@ class FileTransferTester:
         with open('clientlog.txt', "w") as outfile:
             (subprocess.Popen(cmd, stdout=outfile)).wait()
         print("Ran test on: {}".format(filename))
-        self.__grabGetFilesOutput(filename)
+        if self.__test_flag == "-g":
+            self.__grabGetFilesOutput(filename)
         sleep(2) #wait for server to receive packets and write to file if uploading from client (problem with large files)
         self.__runDiff(filename)
         
@@ -87,13 +82,12 @@ class FileTransferTester:
     __test_flag = ""
     __baseline_dir = ""
 
-    
 def runMake():
-    cmd_client = ["make", "client", "_OUTLOC=../tests/"]
-    cmd_server = ["make", "server", "_OUTLOC=../tests/"]
+    cmd_client = ["make", "client", "_OUTLOC=../tests/integration/"]
+    cmd_server = ["make", "server", "_OUTLOC=../tests/integration/"]
     cmds = [cmd_client, cmd_server]
     for cmd in cmds:
-        (subprocess.Popen(cmd, cwd="../src", stdout=subprocess.DEVNULL)).wait()
+        (subprocess.Popen(cmd, cwd="../../src", stdout=subprocess.DEVNULL)).wait()
 
 def startServer():
     print("\n")
@@ -123,21 +117,23 @@ def readFiles(dirname):
 def addTuples(tuple_lhs, tuple_rhs):
     return tuple(map(operator.add, tuple_lhs, tuple_rhs))
 
+def performIntegrationTests():
+    test_info = (0, 0)
+    test_info = addTuples(test_info, performTransferTests("-g", "baselines/getfiles"))
+    test_info = addTuples(test_info, performTransferTests("-u", "baselines/transfer"))
+    test_info = addTuples(test_info, performTransferTests("-d", "baselines/transfer"))
+    print(
+        "[TESTS {}]\n".format("SUCCESSFUL" if test_info[1] == 0 else "FAILED"),
+        "Total tests: {}\n".format(test_info[0]),
+        "Successful tests: {}\n".format(test_info[0] - test_info[1]),
+        "Failed tests: {}\n".format(test_info[1])
+    )
+
 def main():
     runMake()
     server = startServer()
     try:
-        test_info = (0, 0)
-        dir = "baselines/getfiles/"
-        test_info = addTuples(test_info, performTransferTests("-g", "baselines/getfiles"))
-        #test_info = addTuples(test_info, performTransferTests("-u", "baselines/transfer"))
-        #test_info = addTuples(test_info, performTransferTests("-d", "baselines/transfer"))
-        print(
-            "[TESTS {}]\n".format("SUCCESSFUL" if test_info[1] == 0 else "FAILED"),
-            "Total tests: {}\n".format(test_info[0]),
-            "Successful tests: {}\n".format(test_info[0] - test_info[1]),
-            "Failed tests: {}\n".format(test_info[1])
-        )
+        performIntegrationTests()
     except Exception as e:
         print(e)
     server.terminate()
