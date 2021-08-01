@@ -30,8 +30,8 @@ int serialiseAndSendFilenames(uint8_t client_fd) {
     struct dirent* dir_file;
     const char* current_dir = ".";
     const char* prev_dir = "..";
-    const uint8_t serialised_len = 254;
-    uint8_t current_len = 0;
+    const uint8_t serialised_len = 253;
+    uint16_t current_len = 0;
     if (dir) {
         char* serialised_str = malloc(serialised_len);
         while((dir_file = readdir(dir)) != NULL) {
@@ -39,19 +39,23 @@ int serialiseAndSendFilenames(uint8_t client_fd) {
             if (!strcmp(filename, current_dir) || !strcmp(filename, prev_dir)) {
                 continue;
             }
-            uint8_t name_len = strlen(filename);
+            uint16_t name_len = strlen(filename);
             if ((current_len + name_len + 1) > serialised_len) {
-                if (!sendFilenamesToClient(client_fd, serialised_len, serialised_str))
+                if (!sendFilenamesToClient(client_fd, serialised_len, serialised_str)) {
+                    printf("failed!\n");
                     return 0;
+                }
                 current_len = 0;
             }
             strncpy(serialised_str + current_len, filename, strlen(filename));
-            strncat(serialised_str, "\n", 1);
+            strcat(serialised_str, "\n");
             current_len += (name_len + 1);
         }
         if (current_len != 0)
-            if (!sendFilenamesToClient(client_fd, serialised_len, serialised_str))
+            if (!sendFilenamesToClient(client_fd, serialised_len, serialised_str)) {
+                printf("failed!\n");
                 return 0;
+            }
         free(serialised_str);
         closedir(dir);
         notifyFullFileSent(client_fd, 'G');

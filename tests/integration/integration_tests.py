@@ -17,9 +17,10 @@ class FileTransferTester:
             self.__testClientTransfer(test)
         return self.tests_failed
 
-    def __removeOutput(self, filename):
-        (subprocess.Popen(["rm storage/*"], shell=True)).wait()
-        if self.__test_flag != "-u":
+    def __removeOutput(self, filename, failure):
+        if not failure or self.__test_flag != "-u":
+            (subprocess.Popen(["rm storage/*"], shell=True)).wait()
+        if not failure and self.__test_flag != "-u":
             (subprocess.Popen(["rm {}".format(filename)], shell=True)).wait()
         
     def __runDiff(self, filename):
@@ -30,29 +31,33 @@ class FileTransferTester:
         test_type = "Upload" if self.__test_flag == "-u" else "Download" if self.__test_flag == "-d" else "GetFiles"
         if difftask.returncode == 0:
             print("{} test success!\n".format(test_type))
-            self.__removeOutput(filename) #we want to keep the faulty output for debugging
         else:
             print("{} test failed!\n".format(test_type))
             self.tests_failed += 1
+        self.__removeOutput(filename, difftask.returncode)
         
     def __prepareForGetFiles(self, filename):
         name_list = self.__baseline_dir + "/" + filename
         with open(name_list) as names:
             names_arr = [x.strip() for x in names.readlines()]
         for name in names_arr:
-            open("storage/{}".format(name), "w")
+            (subprocess.Popen("touch storage/{}".format(name), shell=True)).wait()
 
     def __grabGetFilesOutput(self, filename):
         with open("clientlog.txt") as output:
             getfiles_output = [x.strip() for x in output.readlines()]
-            getfiles_output = getfiles_output[
-                getfiles_output.index("[FILES]") + 1
-                :
-                getfiles_output.index("Client: successfully retrieved file list from server")
-            ]
+            try:
+                getfiles_output = getfiles_output[
+                    getfiles_output.index("[FILES]") + 1
+                    :
+                    getfiles_output.index("Client: successfully retrieved file list from server")
+                ]
+            except:
+                return False
         with open(filename, "w") as output_file:
             for line in getfiles_output:
                 output_file.write(line + "\n")
+        return True
 
     def __prepareForDownload(self, filename):
         cmd = "cp {}/{} storage/{}".format(self.__baseline_dir, filename, filename)
@@ -72,11 +77,14 @@ class FileTransferTester:
         with open('clientlog.txt', "w") as outfile:
             (subprocess.Popen(cmd, stdout=outfile)).wait()
         print("Ran test on: {}".format(filename))
+        sleep(1) #wait for server
         if self.__test_flag == "-g":
-            self.__grabGetFilesOutput(filename)
-        sleep(2) #wait for server to receive packets and write to file if uploading from client (problem with large files)
+            if not self.__grabGetFilesOutput(filename):
+                self.tests_failed += 1
+                print("Get files test on {} failed: client unable to retrieve all files from server".format(filename))
+                (subprocess.Popen(["rm storage/*"], shell=True)).wait()
+                return
         self.__runDiff(filename)
-        
     tests = []
     tests_failed = 0
     __test_flag = ""
@@ -90,7 +98,6 @@ def runMake():
         (subprocess.Popen(cmd, cwd="../../src", stdout=subprocess.DEVNULL)).wait()
 
 def startServer():
-    print("\n")
     with open('serverlog.txt', "w") as outfile:
         server = subprocess.Popen("./server", stdout=outfile)
         sleep(1)

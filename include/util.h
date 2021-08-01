@@ -1,4 +1,4 @@
-#define PKT_DATA_SIZE 254
+#define PKT_DATA_SIZE 253
 #define HEADER_LEN 2
 #define PORT "9034"
 
