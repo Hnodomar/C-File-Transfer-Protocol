@@ -16,11 +16,9 @@ int sendFilenamesToClient(uint8_t client_fd, const uint8_t serialised_len, char*
     constructPacket(packet_len, &tag, serialised_str, &packet);
     if (sendAll(client_fd, packet, &packet_len) == -1) {
         printf("Server: error whilst sending filenames to client\n");
-        free(serialised_str);
         return 0;
     }
     bzero(serialised_str, serialised_len);
-    free(packet);
     return 1;
 }
 

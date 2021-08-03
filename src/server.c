@@ -16,61 +16,13 @@
 #include "util.h"
 #include "filenames.h"
 
-#define BUFF_SIZE 1024
-
-int setupListenerSocket(void) {
-    struct addrinfo hints, *a_info, *a_ele;
-    int listener;
-    int yes = 1;
-    int addr_return;
-    memset(&hints, 0, sizeof hints);
-    hints.ai_family = AF_UNSPEC;
-    hints.ai_socktype = SOCK_STREAM;
-    hints.ai_flags = AI_PASSIVE;
-    addr_return = getaddrinfo(NULL, PORT, &hints, &a_info);
-    if (addr_return == -1) {
-        fprintf(stderr, "selectserver: %s\n", gai_strerror(addr_return));
-        exit(1);
-    }
-    for (a_ele = a_info; a_ele != NULL; a_ele = a_ele->ai_next) {
-        listener = socket(
-            a_ele->ai_family, 
-            a_ele->ai_socktype, 
-            a_ele->ai_protocol
-        );
-        if (listener < 0 ) {
-            continue;
-        }
-        setsockopt( //get rid of "address already in use" error msg
-            listener,
-            SOL_SOCKET,
-            SO_REUSEADDR,
-            &yes,
-            sizeof(int)
-        );
-        if (bind(listener, a_ele->ai_addr, a_ele->ai_addrlen) == -1) {
-            close(listener);
-            continue;
-        }
-        break;
-    }
-    freeaddrinfo(a_info);
-    if (a_ele == NULL) {
-        return -1;
-    }
-    if (listen(listener, 10) == -1) {
-        return -1;
-    }
-    return listener;
-}
-
 void getStoragePath(char* file_name, char** strg_path) {
     strcpy(*strg_path, "./storage/");
     uint8_t len = strlen(file_name);
     strncat(*strg_path, file_name, len);
 }
 
-uint8_t fileExists(uint8_t client_fd, char* file_name) {
+int fileExists(uint8_t client_fd, char* file_name) {
     if (access(file_name, F_OK) == 0) { //file does exist
         printf("file exists\n");
         send(client_fd, "Y", 1, 0);
@@ -140,8 +92,7 @@ void handleClientRequest(uint8_t client_fd, struct FileProtocolPacket* client_re
             printf("server: received invalid packet from client\n");
             break;
     }
-    if (!is_get_req)
-        free(rel_path);
+    if (!is_get_req) free(rel_path);
     free(client_request);
     client_request = NULL;
 }
@@ -199,7 +150,7 @@ void startMainLoop(uint8_t listener_socket) {
 }
 
 void initialiseServer() {
-    uint8_t listener_socket = setupListenerSocket();
+    uint8_t listener_socket = setupSocket(1, NULL);
     if (listener_socket == -1) {
         fprintf(stderr, "error getting listening socket\n");
         exit(1);

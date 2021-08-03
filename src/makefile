@@ -1,21 +1,17 @@
 CC=gcc
 CFLAGS=-I$(IDIR)
-
 IDIR=../include
-
 _SDEPS=util.h filenames.h
 _CDEPS=util.h
 SDEPS=$(patsubst %, $(IDIR)/%, $(_SDEPS))
 CDEPS=$(patsubst %, $(IDIR)/%, $(_CDEPS))
+ODIR=obj
+UTILOBJ=obj/util.o
+FNOBJ=obj/filenames.o
 
 ifneq ($(_OUTLOC), ../tests/integration/)
 	override _OUTLOC=./
 endif
-
-OBJ=$(patsubst %,$(ODIR)/%)
-ODIR=obj
-UTILOBJ=obj/util.o
-FNOBJ=obj/filenames.o
 
 $(ODIR)/%.o: %.c $(SDEPS)
 	$(CC) -c -o $@ $< $(CFLAGS)

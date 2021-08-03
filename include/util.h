@@ -1,3 +1,6 @@
+#ifndef UTIL_H
+#define UTIL_H
+
 #define PKT_DATA_SIZE 253
 #define HEADER_LEN 2
 #define PORT "9034"
@@ -15,3 +18,6 @@ extern void constructPacket(uint8_t len, char* tag, void* data, void** packet);
 extern int uploadFile(uint8_t fd, char* filename);
 extern int downloadFile(uint8_t fd, char* filename);
 extern int notifyFullFileSent(uint8_t fd, char tag);
+extern int setupSocket(int setup_listener, const char* hostname);
+
+#endif

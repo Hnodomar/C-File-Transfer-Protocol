@@ -3,6 +3,8 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
+#include <netdb.h>
+#include <unistd.h>
 
 #include "util.h"
 
@@ -12,6 +14,67 @@ void* getAddress(struct sockaddr* socket_addr) {
     }
     return &(((struct sockaddr_in6*)socket_addr)->sin6_addr);
 }
+
+int setupSocket(int setup_listener, const char* hostname) {
+    struct addrinfo hints, *a_info, *a_ele;
+    int sockfd;
+    int yes = 1;
+    int addr_return;
+    memset(&hints, 0, sizeof(hints));
+    hints.ai_family = AF_UNSPEC;
+    hints.ai_socktype = SOCK_STREAM;
+    if (setup_listener) {
+        hints.ai_flags = AI_PASSIVE;
+        addr_return = getaddrinfo(NULL, PORT, &hints, &a_info);
+    }
+    else {
+        addr_return = getaddrinfo(hostname, PORT, &hints, &a_info);
+    }
+    if (addr_return == -1) {
+        fprintf(stderr, "selectserver: %s\n", gai_strerror(addr_return));
+        exit(1);
+    }
+    for (a_ele = a_info; a_ele != NULL; a_ele = a_ele->ai_next) {
+        sockfd = socket(
+            a_ele->ai_family, 
+            a_ele->ai_socktype, 
+            a_ele->ai_protocol
+        );
+        if (sockfd < 0 ) {
+            continue;
+        }
+        if (setup_listener) {
+            setsockopt(
+                sockfd,
+                SOL_SOCKET,
+                SO_REUSEADDR,
+                &yes,
+                sizeof(int)
+            );
+            if (bind(sockfd, a_ele->ai_addr, a_ele->ai_addrlen) == -1) {
+                close(sockfd);
+                continue;
+            }
+        }
+        if (!setup_listener) {
+            if (connect(sockfd, a_ele->ai_addr, a_ele->ai_addrlen) == -1) {
+                close(sockfd);
+                continue;
+            }
+        }
+        break;
+    }
+    freeaddrinfo(a_info);
+    if (a_ele == NULL) {
+        return -1;
+    }
+    if (setup_listener)
+        if (listen(sockfd, 10) == -1) {
+            return -1;
+        }
+    return sockfd;
+}
+
 
 int sendAll(uint8_t fd, void* buffer, uint8_t* len) {
     uint8_t total = 0;
@@ -24,6 +87,8 @@ int sendAll(uint8_t fd, void* buffer, uint8_t* len) {
         bytes_left -= bytes_sent;
     }
     *len = total;
+    free(buffer);
+    buffer = NULL;
     return bytes_sent == -1 ? -1 : 0;
 }
 
@@ -34,6 +99,7 @@ int recvAll(uint8_t fd, struct FileProtocolPacket** req) {
     int len = recv(fd, header_buffer, HEADER_LEN, 0);
     if (len == 0 || len == -1) {
         printf("Connection (%d) failed on receiving, received: %d\n", fd, len);
+        free(header_buffer);
         return 0;
     }
     uint8_t packet_length = *((uint8_t*)header_buffer);
@@ -44,13 +110,16 @@ int recvAll(uint8_t fd, struct FileProtocolPacket** req) {
     void* buffer = malloc(packet_length + 1);
     memset(buffer, 0, packet_length);
     memcpy(buffer, header_buffer, len);
+    free(header_buffer);
     while (len < packet_length) {
         bytes_recv = recv(fd, buffer + len, packet_length - len, 0);
         if (bytes_recv == -1) {
+            free(buffer);
             printf("server: recvAll failed\n");
             return 0;
         }
         else if (bytes_recv == 0) {
+            free(buffer);
             printf("server: socket %d hung up\n", fd);
             return 0;
         }
@@ -95,7 +164,6 @@ int uploadFile(uint8_t fd, char* filename) {
             return 0;
         }
         bzero(data, PKT_DATA_SIZE);
-        free(file_packet);
         file_packet = NULL;
     }
     fclose(file_ptr);
