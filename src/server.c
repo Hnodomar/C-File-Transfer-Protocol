@@ -22,15 +22,22 @@ void getStoragePath(char* file_name, char** strg_path) {
     strncat(*strg_path, file_name, len);
 }
 
-int fileExists(uint8_t client_fd, char* file_name) {
-    if (access(file_name, F_OK) == 0) { //file does exist
-        printf("file exists\n");
-        send(client_fd, "Y", 1, 0);
-        return 1;
+int fileExists(uint8_t client_fd, char* file_name, char tag) {
+    uint8_t len = HEADER_LEN + 1;
+    void* packet = malloc(HEADER_LEN + 1);
+    void* data = malloc(1);
+    int file_exists = access(file_name, F_OK);
+    if (file_exists == 0) { //file does exist
+        memset(data, 'Y', 1);
     }
-    send(client_fd, "N", 1, 0); //file doesn't exist
-    printf("file doesnt exist\n");
-    return 0;
+    else memset(data, 'N', 1); //file doesn't exist
+    constructPacket(len, &tag, data, &packet);
+    if (sendAll(client_fd, packet, &len) == -1) {
+        printf("Error: was unable to notify client that file exists or not\n");
+        return -1;
+    }
+    free(data);
+    return (file_exists == 0) ? 1 : 0;
 }
 
 void signalChildHandler(int signal) {
@@ -54,15 +61,21 @@ void setupSigAction(struct sigaction* signal_action) {
 void handleClientDownload(uint8_t client_fd, char* rel_path, struct FileProtocolPacket* client_request) {
     if (!pathIsValid(rel_path))
         printf("Server: client attempted to download file with bad path\n");
-    if (fileExists(client_fd, rel_path))
+    int file_exists = fileExists(client_fd, rel_path, client_request->tag);
+    if (file_exists)
         uploadFile(client_fd, rel_path);
+    else if (file_exists == -1)
+        printf("Server: Error - server unable to notify client on file existence\n");
     else
         printf("Server: client attempted to download file with name that does not exist\n");
 }
 
 void handleClientUpload(uint8_t client_fd, char* rel_path, struct FileProtocolPacket* client_request) {
-    if (!fileExists(client_fd, rel_path))
+    int file_exists = fileExists(client_fd, rel_path, client_request->tag);
+    if (!file_exists)
         downloadFile(client_fd, rel_path);
+    else if (file_exists == -1)
+        printf("Sever: Error - server unable to notify client on file existence\n");
     else //deny upload
         printf("Server: client attempted to upload file with name that already exists\n");
 }
@@ -77,8 +90,8 @@ void handleClientRequest(uint8_t client_fd, struct FileProtocolPacket* client_re
     int is_get_req = (client_request->length < 2);
     if (!is_get_req) { //not a get request
         const uint8_t d_name_len = 11;
-        rel_path = malloc(strlen(client_request->filename) + d_name_len);
-        getStoragePath(client_request->filename, &rel_path);
+        rel_path = malloc(strlen(client_request->data) + d_name_len);
+        getStoragePath(client_request->data, &rel_path);
     }
     switch(client_request->tag) {
         case 'G':

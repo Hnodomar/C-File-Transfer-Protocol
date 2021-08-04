@@ -8,7 +8,7 @@
 struct FileProtocolPacket {
     uint8_t length;
     char tag;
-    char filename[PKT_DATA_SIZE];
+    char data[PKT_DATA_SIZE];
 };
 
 extern void* getAddress(struct sockaddr* socket_addr);

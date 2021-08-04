@@ -182,12 +182,12 @@ int downloadFile(uint8_t fd, char* filename) {
             fclose(file_ptr);
             return 0;
         }
-        if (!strcmp(file_pkt->filename, "END")) {
+        if (!strcmp(file_pkt->data, "END")) {
             printf("File %s successfully downloaded!\n", filename);
             fclose(file_ptr);
             return 1;
         }
-        fprintf(file_ptr, "%s", file_pkt->filename);
+        fprintf(file_ptr, "%s", file_pkt->data);
         free(file_pkt);
         file_pkt = NULL;
     }

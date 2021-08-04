@@ -20,11 +20,11 @@ void getFileNames(uint8_t tcp_fd) {
             printf("Client: error in receiving file names from server\n");
             exit(1);
         }
-        if (!strcmp(resp->filename, "END")) {
+        if (!strcmp(resp->data, "END")) {
             printf("Client: successfully retrieved file list from server\n");
             break;
         }
-        printf("%s", resp->filename);
+        printf("%s", resp->data);
         free(resp);
         resp = NULL;
     }
@@ -43,14 +43,13 @@ int sendRequest(uint8_t tcp_fd, char* tag, char* filename) {
 }
 
 int fileExistsOnServer(uint8_t tcp_fd) {
-    char buffer[1];
-    uint8_t num_bytes = recv(tcp_fd, buffer, sizeof(buffer), 0);
-    if (num_bytes == -1) {
-        printf("Error: failed to receive response from server that file exists\n");
-        return 0;
+    struct FileProtocolPacket* file_exists;
+    if (!recvAll(tcp_fd, &file_exists)) {
+        printf("Client: error in receiving file existence info from server\n");
+        exit(1);
     }
-    if (buffer[0] == 'N') return 0;
-    else if (buffer[0] == 'Y') return 1;
+    if (file_exists->data[0] == 'N') return 0;
+    else if (file_exists->data[0] == 'Y') return 1;
 }
 
 void failedRequest(char* req_name) {
