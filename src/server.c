@@ -52,6 +52,8 @@ void setupSigAction(struct sigaction* signal_action) {
 }
 
 void handleClientDownload(uint8_t client_fd, char* rel_path, struct FileProtocolPacket* client_request) {
+    if (!pathIsValid(rel_path))
+        printf("Server: client attempted to download file with bad path\n");
     if (fileExists(client_fd, rel_path))
         uploadFile(client_fd, rel_path);
     else

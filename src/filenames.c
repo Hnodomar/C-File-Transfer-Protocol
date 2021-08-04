@@ -9,6 +9,34 @@
 #include "filenames.h"
 #include "util.h"
 
+int findPattern(char* path, char* pattern) {
+    int path_itr, pattern_itr;
+    int path_len = strlen(path);
+    int pattern_len = strlen(pattern);
+    if (pattern_len > path_len)
+        return -1;
+    for (path_itr = 0; path_itr <= path_len - pattern_len; ++path_itr) {
+        int position = path_itr;
+        int substr_itr = path_itr;
+        for (pattern_itr = 0; pattern_itr < pattern_len; ++pattern_itr) {
+            if (pattern[pattern_itr] == path[substr_itr])
+                ++substr_itr;
+            else break;
+        }
+        if (pattern_itr == pattern_len)
+            return position;
+    }
+    return -1;
+}
+
+int pathIsValid(char* path) {
+    if (findPattern(path, "..") != -1)
+        return 0;
+    if (findPattern(path, "#!/bin/bash") != -1)
+        return 0;
+    return 1;
+}
+
 int sendFilenamesToClient(uint8_t client_fd, const uint8_t serialised_len, char* serialised_str) {
     char tag = 'G';
     uint8_t packet_len = strlen(serialised_str) + HEADER_LEN;

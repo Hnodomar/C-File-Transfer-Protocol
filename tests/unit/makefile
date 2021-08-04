@@ -1,6 +1,5 @@
 LINKCHECK = `pkg-config --cflags --libs check`
 UNIT_TEST = unit_tests
-DEPS = ../../src/util.c ../../src/filenames.c
 DEPSOBJ = util.o filenames.o
 INC = -I../../include
 CC = gcc
