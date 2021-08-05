@@ -16,6 +16,6 @@ This project interacts directly with the Berkeley Sockets API to allow clients t
 
 ## Dependencies
 
-* Check - C Unit Testing Framework
-* pkgconfig - Used for linking Check to build the unit tests
+* Check - C Unit Testing Framework https://libcheck.github.io/check/
+* pkgconfig - Used for linking Check to build the unit tests https://www.freedesktop.org/wiki/Software/pkg-config/
 * Python3 - Used to implement integration testing
