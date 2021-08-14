@@ -12,6 +12,7 @@
 #include <sys/wait.h>
 #include <errno.h>
 #include <dirent.h>
+#include <pthread.h>
 
 #include "util.h"
 #include "filenames.h"
@@ -38,24 +39,6 @@ int fileExists(uint8_t client_fd, char* file_name, char tag) {
     }
     free(data);
     return (file_exists == 0) ? 1 : 0;
-}
-
-void signalChildHandler(int signal) {
-    int saved_errno = errno; //waitpid might overwrite this
-    int child_pid;
-    while((child_pid = waitpid(-1, NULL, WNOHANG)) > 0)
-        printf("Child process terminated, PID: %d\n", child_pid);
-    errno = saved_errno;
-}
-
-void setupSigAction(struct sigaction* signal_action) {
-    signal_action->sa_handler = signalChildHandler;
-    sigemptyset(&(signal_action->sa_mask));
-    signal_action->sa_flags = SA_RESTART;
-    if (sigaction(SIGCHLD, &(*signal_action), NULL) == -1) {
-        perror("sigaction");
-        exit(1);
-    }
 }
 
 void handleClientDownload(uint8_t client_fd, char* rel_path, struct FileProtocolPacket* client_request) {
@@ -87,7 +70,7 @@ void handleClientGetFilenames(uint8_t client_fd, struct FileProtocolPacket* clie
 
 void handleClientRequest(uint8_t client_fd, struct FileProtocolPacket* client_request) {
     char* rel_path;
-    int is_get_req = (client_request->length < 2);
+    int is_get_req = (client_request->length < HEADER_LEN);
     if (!is_get_req) { //not a get request
         const uint8_t d_name_len = 11;
         rel_path = malloc(strlen(client_request->data) + d_name_len);
@@ -139,29 +122,35 @@ int handleNewConnection(uint8_t listener_socket) {
     }
 }
 
+void* handleClientConnection(void* fd_input) {
+    uint8_t client_fd = (uint8_t)fd_input;
+    struct FileProtocolPacket* client_request;
+    if (!recvAll(client_fd, &client_request)) {
+        printf("Server: error in receiving data from client\n");
+        close(client_fd);
+        pthread_exit(NULL);
+    }
+    else 
+        handleClientRequest(client_fd, &(*client_request));
+    close(client_fd);
+    pthread_exit(NULL);
+}
+
 void startMainLoop(uint8_t listener_socket) {
-    struct sigaction signal_action;
-    setupSigAction(&signal_action);
+    pthread_attr_t attr;
+    pthread_t thread;
+    pthread_attr_init(&attr);
+    pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_DETACHED);
     for (;;) {
         uint8_t client_fd = handleNewConnection(listener_socket);
         if (!client_fd) {
             printf("Server: error with client connecting\n");
             continue;
         }
-        if (!fork()) {
-            close(listener_socket);
-            struct FileProtocolPacket* client_request;
-            if (!recvAll(client_fd, &client_request)) {
-                printf("Server: error in receiving data from client\n");
-                exit(1);
-            }
-            else 
-                handleClientRequest(client_fd, &(*client_request));
-            close(client_fd);
-            exit(0);
-        }
-        close(client_fd);
+        pthread_create(&thread, &attr, handleClientConnection, (void*)client_fd);
     }
+    pthread_attr_destroy(&attr);
+    pthread_exit(NULL);
 }
 
 void initialiseServer() {

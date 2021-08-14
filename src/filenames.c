@@ -68,7 +68,7 @@ int serialiseAndSendFilenames(uint8_t client_fd) {
             uint16_t name_len = strlen(filename);
             if ((current_len + name_len + 1) > serialised_len) {
                 if (!sendFilenamesToClient(client_fd, serialised_len, serialised_str)) {
-                    printf("failed!\n");
+                    printf("Server: error whilst sending filenames to client!\n");
                     return 0;
                 }
                 current_len = 0;
@@ -84,7 +84,10 @@ int serialiseAndSendFilenames(uint8_t client_fd) {
             }
         free(serialised_str);
         closedir(dir);
-        notifyFullFileSent(client_fd, 'G');
+        if (!notifyFullFileSent(client_fd, 'G')) {
+            printf("Server: error whilst trying to notify client that all filenames sent\n");
+            return 0;
+        }
         return 1;
     }
     else {
