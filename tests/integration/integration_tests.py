@@ -8,6 +8,7 @@ class FileTransferTester:
         self.tests = []
         self.__test_flag = flag
         self.__baseline_dir = dir
+        self.__test_type = "Upload" if flag == "-u" else "Download" if flag == "-d" else "GetFiles"
 
     def addTest(self, input):
         self.tests.append(input)
@@ -15,7 +16,7 @@ class FileTransferTester:
     def runTests(self):
         for test in self.tests:
             self.__testClientTransfer(test)
-        return self.tests_failed
+        return (len(self.tests), self.tests_failed)
 
     def __removeOutput(self, filename, failure):
         if not failure or self.__test_flag != "-u":
@@ -28,11 +29,10 @@ class FileTransferTester:
         cmd = ["diff {}/{} {}".format(self.__baseline_dir, filename, output_file)]
         difftask = subprocess.Popen(cmd, stdout=subprocess.PIPE, shell=True)
         difftask.communicate()
-        test_type = "Upload" if self.__test_flag == "-u" else "Download" if self.__test_flag == "-d" else "GetFiles"
         if difftask.returncode == 0:
-            print("{} test success!\n".format(test_type))
+            print("{} test success!\n".format(self.__test_type))
         else:
-            print("{} test failed!\n".format(test_type))
+            print("{} test failed!\n".format(self.__test_type))
             self.tests_failed += 1
         self.__removeOutput(filename, difftask.returncode)
         
@@ -76,7 +76,7 @@ class FileTransferTester:
             self.__prepareForGetFiles(filename)
         with open('clientlog.txt', "w") as outfile:
             (subprocess.Popen(cmd, stdout=outfile)).wait()
-        print("Ran test on: {}".format(filename))
+        print("Ran {} test on: {}".format(self.__test_type, filename))
         sleep(1) #wait for server
         if self.__test_flag == "-g":
             if not self.__grabGetFilesOutput(filename):
@@ -89,6 +89,7 @@ class FileTransferTester:
     tests_failed = 0
     __test_flag = ""
     __baseline_dir = ""
+    __test_type = ""
 
 def runMake():
     cmd_client = ["make", "client", "_OUTLOC=../tests/integration/"]
@@ -111,11 +112,10 @@ def addTransferTests(transfer_tester, dirname):
     for file in readFiles(dirname):
         transfer_tester.addTest(file)
 
-def performTransferTests(flag, baseline_dir):
+def performTransferTests(flag, baseline_dir):        
     transfer_tester = FileTransferTester(flag, baseline_dir)
     addTransferTests(transfer_tester, baseline_dir)
-    transfer_tester.runTests()
-    return (len(transfer_tester.tests), transfer_tester.tests_failed)
+    return transfer_tester.runTests()
 
 def readFiles(dirname):
     filenames = next(walk(dirname), (None, None, []))[2]

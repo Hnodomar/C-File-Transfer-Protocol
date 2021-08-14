@@ -43,13 +43,15 @@ int sendRequest(uint8_t tcp_fd, char* tag, char* filename) {
 }
 
 int fileExistsOnServer(uint8_t tcp_fd) {
-    struct FileProtocolPacket* file_exists;
-    if (!recvAll(tcp_fd, &file_exists)) {
+    struct FileProtocolPacket* file_exists_resp;
+    if (!recvAll(tcp_fd, &file_exists_resp)) {
         printf("Client: error in receiving file existence info from server\n");
         exit(1);
     }
-    if (file_exists->data[0] == 'N') return 0;
-    else if (file_exists->data[0] == 'Y') return 1;
+    char file_exists = file_exists_resp->data[0];
+    free(file_exists_resp);
+    if (file_exists == 'N') return 0;
+    else if (file_exists == 'Y') return 1;
 }
 
 void failedRequest(char* req_name) {
